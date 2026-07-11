@@ -1,0 +1,20 @@
+# Environment
+.env
+
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual Environment
+ai/
+.venv/
+
+# Testing
+.pytest_cache/
+
+# IDE
+.vscode/
+
+# Logs
+*.log
