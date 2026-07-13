@@ -1,48 +1,52 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from app.core.logging import setup_logging, get_logger
 from app.core.config import settings
+from app.core.logging import get_logger, setup_logging
+from app.api.v1.api import api_router
 
 
 setup_logging()
-
 logger = get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info(
+        "application_starting",
+        app=settings.APP_NAME,
+        version=settings.APP_VERSION,
+    )
+
+    # Future startup tasks:
+    # - Database health check
+    # - Redis connection
+    # - Celery initialization
+    # - AI model loading
+
+    yield
+
+    logger.info("application_stopping")
 
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
+    lifespan=lifespan,
 )
 
-
-@app.on_event("startup")
-async def startup_event():
-
-    logger.info(
-        "application_started",
-        app=settings.APP_NAME,
-        version=settings.APP_VERSION
-    )
-
+app.include_router(
+    api_router,
+    prefix=settings.API_V1_PREFIX,
+)
 
 @app.get("/")
 async def root():
-
-    logger.info(
-        "root_endpoint_called"
-    )
-
-    return {
-        "message": settings.APP_NAME
-    }
+    return {"message": settings.APP_NAME}
 
 
 @app.get("/health")
 async def health():
-
-    logger.info(
-        "health_check"
-    )
-
     return {
-        "status": "healthy"
+        "status": "healthy",
+        "version": settings.APP_VERSION,
     }
