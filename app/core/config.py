@@ -1,12 +1,9 @@
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """
-    Application configuration.
-    Values are loaded from environment variables.
-    """
 
     # Application
     APP_NAME: str = "Enterprise AI Platform"
@@ -20,6 +17,7 @@ class Settings(BaseSettings):
 
 
     # Database
+
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
     POSTGRES_DB: str
@@ -30,6 +28,7 @@ class Settings(BaseSettings):
 
 
     # Security
+
     SECRET_KEY: str
 
     ALGORITHM: str = "HS256"
@@ -40,11 +39,48 @@ class Settings(BaseSettings):
 
 
     # Redis
+
     REDIS_HOST: str = "localhost"
 
     REDIS_PORT: int = 6379
 
     REDIS_DB: int = 0
+
+
+
+    # ==========================
+    # AI PROVIDERS
+    # ==========================
+
+
+    AI_PROVIDER: str = "groq"
+
+    AI_MODEL: str = "llama-3.1-8b-instant"
+
+
+    # OpenAI
+
+    OPENAI_API_KEY: str | None = None
+
+
+    # Google Gemini
+
+    GEMINI_API_KEY: str | None = None
+
+
+    # Groq
+
+    GROQ_API_KEY: str | None = None
+
+
+
+    # Embeddings
+
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+
+
+    VECTOR_DIMENSION: int = 1536
+
 
 
     model_config = SettingsConfigDict(
@@ -53,14 +89,12 @@ class Settings(BaseSettings):
     )
 
 
+
 @lru_cache
-def get_settings() -> Settings:
-    """
-    Creates a single settings instance.
-    Cached to avoid reading .env repeatedly.
-    """
+def get_settings():
 
     return Settings()
+
 
 
 settings = get_settings()
