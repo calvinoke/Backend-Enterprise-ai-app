@@ -3,6 +3,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base_class import Base
 from app.database.mixins import UUIDMixin, TimestampMixin
+#from sqlalchemy.orm import relationship
 
 class User(
     Base,
@@ -64,3 +65,9 @@ class User(
         back_populates="user",
         cascade="all, delete",
     )
+
+    conversations = relationship(
+    "Conversation",
+    back_populates="user",
+    cascade="all, delete-orphan",
+)

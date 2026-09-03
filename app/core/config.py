@@ -1,11 +1,17 @@
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    SettingsConfigDict,
+)
 
 
 class Settings(BaseSettings):
 
-    # Application
+    # =====================================================
+    # APPLICATION
+    # =====================================================
+
     APP_NAME: str = "Enterprise AI Platform"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
@@ -16,18 +22,23 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
 
-    # Database
+    # =====================================================
+    # DATABASE
+    # =====================================================
 
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
     POSTGRES_DB: str
+
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
 
     DATABASE_URL: str
 
 
-    # Security
+    # =====================================================
+    # SECURITY
+    # =====================================================
 
     SECRET_KEY: str
 
@@ -38,63 +49,64 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
 
-    # Redis
+    # =====================================================
+    # REDIS
+    # =====================================================
 
     REDIS_HOST: str = "localhost"
-
     REDIS_PORT: int = 6379
-
     REDIS_DB: int = 0
 
 
-
-    # ==========================
-    # AI PROVIDERS
-    # ==========================
-
+    # =====================================================
+    # LLM PROVIDER
+    # =====================================================
 
     AI_PROVIDER: str = "groq"
 
     AI_MODEL: str = "llama-3.1-8b-instant"
 
 
-    # OpenAI
+    # =====================================================
+    # EMBEDDING PROVIDER
+    # =====================================================
+
+    EMBEDDING_PROVIDER: str = "ollama"
+
+    EMBEDDING_MODEL: str = "nomic-embed-text"
+
+    VECTOR_DIMENSION: int = 768
+
+
+    # =====================================================
+    # API KEYS
+    # =====================================================
 
     OPENAI_API_KEY: str | None = None
 
-
-    # Google Gemini
-
     GEMINI_API_KEY: str | None = None
-
-
-    # Groq
 
     GROQ_API_KEY: str | None = None
 
+    HUGGINGFACE_API_KEY: str | None = None
+
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
 
 
-    # Embeddings
-
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
-
-
-    VECTOR_DIMENSION: int = 1536
-
-
+    # =====================================================
+    # MODEL CONFIG
+    # =====================================================
 
     model_config = SettingsConfigDict(
         env_file=".env",
-        case_sensitive=True
+        case_sensitive=True,
     )
-
 
 
 @lru_cache
 def get_settings():
 
     return Settings()
-
 
 
 settings = get_settings()

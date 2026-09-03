@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
+from app.aiii.schemas import AIMessage
 
-#For changing different AI models eg openAI,gemini,LLAMA
+
 class BaseAIProvider(ABC):
 
     @abstractmethod
     async def generate(
         self,
-        prompt: str,
+        messages: list[AIMessage],
     ) -> str:
         pass

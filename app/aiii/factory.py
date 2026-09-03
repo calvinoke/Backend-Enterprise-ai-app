@@ -1,42 +1,55 @@
 from app.core.config import settings
 
-from app.aiii.providers.openai_provider import OpenAIProvider
-from app.aiii.providers.gemini_provider import GeminiProvider
-from app.aiii.providers.groq_provider import GroqProvider
-
-
 
 class ProviderFactory:
 
 
     @staticmethod
-    def get_provider():
+    def get_provider(
+        provider: str | None = None,
+        model: str | None = None,
+    ):
 
 
-        provider = settings.AI_PROVIDER.lower()
+        provider = (
+            provider 
+            or settings.AI_PROVIDER
+        ).lower()
 
 
+        print(
+            "====== AI PROVIDER SELECTED ======",
+            provider
+        )
 
-        if provider == "openai":
 
-            return OpenAIProvider()
+        if provider == "groq":
 
+            from app.aiii.providers.groq_provider import GroqProvider
+
+            return GroqProvider(
+                model=model
+            )
 
 
         elif provider == "gemini":
 
-            return GeminiProvider()
+            from app.aiii.providers.gemini_provider import GeminiProvider
 
-
-
-        elif provider == "groq":
-
-            return GroqProvider()
-
-
-
-        else:
-
-            raise ValueError(
-                f"Unsupported AI provider: {provider}"
+            return GeminiProvider(
+                model=model
             )
+
+
+        elif provider == "openai":
+
+            from app.aiii.providers.openai_provider import OpenAIProvider
+
+            return OpenAIProvider(
+                model=model
+            )
+
+
+        raise ValueError(
+            f"Unsupported provider {provider}"
+        )

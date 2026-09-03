@@ -1,20 +1,26 @@
 # Environment
 .env
-
+.env.*
+!.env.example
 
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 
 # Virtual Environment
 ai/
 .venv/
+venv/
 
 # Testing
 .pytest_cache/
 
 # IDE
 .vscode/
+.idea/
 
 # Logs
 *.log
+
+# Local document storage
+storage/

@@ -1,28 +1,25 @@
 from app.aiii.factory import ProviderFactory
-
+from app.aiii.schemas import AIMessage
 
 
 class AIService:
 
+    def __init__(
+        self,
+        provider: str | None = None,
+        model: str | None = None,
+    ):
 
-    def __init__(self):
-
-        self.provider = ProviderFactory.get_provider()
-
-
+        self.provider = ProviderFactory.get_provider(
+            provider=provider,
+            model=model,
+        )
 
     async def ask(
         self,
-        question: str,
-    ):
+        messages: list[AIMessage],
+    ) -> str:
 
-
-        answer = await self.provider.generate(
-            question
+        return await self.provider.generate(
+            messages
         )
-
-
-        return {
-            "question": question,
-            "answer": answer,
-        }
