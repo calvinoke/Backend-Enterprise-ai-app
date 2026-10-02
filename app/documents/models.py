@@ -1,7 +1,9 @@
 from enum import Enum
+from uuid import UUID
 
 from sqlalchemy import (
     Enum as SQLEnum,
+    ForeignKey,
     String,
     Text,
 )
@@ -19,7 +21,6 @@ from app.database.mixins import (
 
 
 class DocumentStatus(str, Enum):
-
     PENDING = "pending"
     PROCESSING = "processing"
     READY = "ready"
@@ -27,7 +28,6 @@ class DocumentStatus(str, Enum):
 
 
 class DocumentType(str, Enum):
-
     PDF = "pdf"
     DOCX = "docx"
     TXT = "txt"
@@ -39,7 +39,6 @@ class Document(
     TimestampMixin,
     Base,
 ):
-
     __tablename__ = "documents"
 
     filename: Mapped[str] = mapped_column(
@@ -52,31 +51,34 @@ class Document(
         nullable=False,
     )
 
-    document_type: Mapped[DocumentType] = (
-        mapped_column(
-            SQLEnum(DocumentType),
-            nullable=False,
-        )
-    )
-
-    status: Mapped[DocumentStatus] = (
-        mapped_column(
-            SQLEnum(DocumentStatus),
-            default=DocumentStatus.PENDING,
-            nullable=False,
-        )
-    )
-
-    content: Mapped[str | None] = (
-        mapped_column(
-            Text,
-            nullable=True,
-        )
-    )
-
-    uploaded_by: Mapped[str] = mapped_column(
-        String(100),
+    document_type: Mapped[DocumentType] = mapped_column(
+        SQLEnum(DocumentType),
         nullable=False,
+    )
+
+    status: Mapped[DocumentStatus] = mapped_column(
+        SQLEnum(DocumentStatus),
+        default=DocumentStatus.PENDING,
+        nullable=False,
+    )
+
+    content: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    uploaded_by: Mapped[UUID] = mapped_column(
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    user = relationship(
+        "User",
+        back_populates="documents",
     )
 
     chunks = relationship(

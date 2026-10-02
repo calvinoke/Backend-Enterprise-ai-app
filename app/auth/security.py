@@ -4,6 +4,8 @@ import hashlib
 
 from jose import jwt, JWTError
 from passlib.context import CryptContext
+#import hashlib
+import secrets
 
 from app.core.config import settings
 
@@ -163,7 +165,7 @@ def decode_refresh_token(
 
 def hash_refresh_token(
     token: str,
-) -> str:
+ ) -> str:
     """
     Hash refresh token before storing in database.
     """
@@ -171,3 +173,102 @@ def hash_refresh_token(
     return hashlib.sha256(
         token.encode("utf-8")
     ).hexdigest()
+
+
+
+
+def generate_password_reset_token() -> str:
+    """
+    Generate a cryptographically secure password reset token.
+
+    The raw token is sent to the user.
+    Only its SHA-256 hash is stored in the database.
+    """
+
+    return secrets.token_urlsafe(48)
+
+
+def hash_password_reset_token(token: str) -> str:
+    """
+    Hash a password reset token using SHA-256.
+    """
+
+    return hashlib.sha256(
+        token.encode("utf-8")
+    ).hexdigest()
+
+
+# =========================================
+# PASSWORD VALIDATION
+# =========================================
+
+def validate_password_strength(
+    password: str,
+) -> str:
+    """
+    Validate the application's password policy.
+
+    Requirements:
+    - At least 8 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one number
+    - At least one special character
+    """
+
+    if len(password) < 8:
+        raise ValueError(
+            "Password must contain at least 8 characters."
+        )
+
+    if not any(char.isupper() for char in password):
+        raise ValueError(
+            "Password must contain at least one uppercase letter."
+        )
+
+    if not any(char.islower() for char in password):
+        raise ValueError(
+            "Password must contain at least one lowercase letter."
+        )
+
+    if not any(char.isdigit() for char in password):
+        raise ValueError(
+            "Password must contain at least one number."
+        )
+
+    if not any(
+        not char.isalnum()
+        for char in password
+    ):
+        raise ValueError(
+            "Password must contain at least one special character."
+        )
+
+    return password
+
+
+
+# =========================================
+# EMAIL VERIFICATION TOKEN
+# =========================================
+
+def generate_email_verification_token() -> str:
+    """
+    Generate a cryptographically secure
+    email verification token.
+    """
+
+    return secrets.token_urlsafe(48)
+
+
+def hash_email_verification_token(
+    token: str,
+) -> str:
+    """
+    Hash an email verification token using SHA-256.
+    """
+
+    return hashlib.sha256(
+        token.encode("utf-8")
+    ).hexdigest()
+

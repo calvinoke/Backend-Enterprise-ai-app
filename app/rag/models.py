@@ -1,15 +1,7 @@
-from sqlalchemy import (
-    ForeignKey,
-    Integer,
-    Text,
-)
-from sqlalchemy.orm import (
-    Mapped,
-    mapped_column,
-    relationship,
-)
-
+from sqlalchemy import ForeignKey, Integer, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
+
 from app.core.config import settings
 from app.database.base_class import Base
 from app.database.mixins import (
@@ -23,7 +15,6 @@ class DocumentChunk(
     TimestampMixin,
     Base,
 ):
-
     __tablename__ = "document_chunks"
 
     document_id: Mapped[str] = mapped_column(
@@ -45,13 +36,9 @@ class DocumentChunk(
         nullable=False,
     )
 
-    embedding: Mapped[list[float] | None] = (
-        mapped_column(
-            Vector(
-                settings.VECTOR_DIMENSION
-            ),
-            nullable=True,
-        )
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(settings.VECTOR_DIMENSION),
+        nullable=True,
     )
 
     document = relationship(

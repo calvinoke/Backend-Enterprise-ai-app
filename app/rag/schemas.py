@@ -1,10 +1,6 @@
 from pydantic import BaseModel, Field
 
 
-# =========================================================
-# SEARCH
-# =========================================================
-
 class RAGSearchRequest(BaseModel):
 
     query: str = Field(
@@ -56,16 +52,14 @@ class RAGSearchResponse(BaseModel):
     count: int
 
 
-# =========================================================
-# CONTEXT
-# =========================================================
-
 class RAGContextRequest(BaseModel):
 
     query: str = Field(
         ...,
         min_length=1,
-        description="Question used to retrieve context.",
+        description=(
+            "Question used to retrieve context."
+        ),
     )
 
     top_k: int = Field(
@@ -94,16 +88,14 @@ class RAGContextResponse(BaseModel):
     count: int
 
 
-# =========================================================
-# ANSWER
-# =========================================================
-
 class RAGAnswerRequest(BaseModel):
 
     query: str = Field(
         ...,
         min_length=1,
-        description="Natural-language question.",
+        description=(
+            "Natural-language question."
+        ),
     )
 
     top_k: int = Field(

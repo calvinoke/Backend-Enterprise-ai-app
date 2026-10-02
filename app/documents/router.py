@@ -1,4 +1,5 @@
 from uuid import UUID
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -6,7 +7,11 @@ from fastapi import (
     HTTPException,
     UploadFile,
 )
+
+from app.auth.dependencies import get_current_user
 from app.core.logging import get_logger
+from app.users.models import User
+
 from .dependencies import (
     get_document_service,
 )
@@ -38,21 +43,15 @@ router = APIRouter(
 )
 async def upload_document(
     file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
     service: DocumentService = Depends(
         get_document_service
     ),
 ):
-    """
-    Upload a document to the document storage system.
-
-    The document is stored on disk and a database record
-    is created with PENDING status.
-    """
 
     try:
 
         if not file.filename:
-
             logger.warning(
                 "Document upload rejected: missing filename"
             )
@@ -66,15 +65,16 @@ async def upload_document(
             "Starting document upload",
             filename=file.filename,
             content_type=file.content_type,
+            user_id=str(user.id),
         )
 
         content = await file.read()
 
         if not content:
-
             logger.warning(
                 "Document upload rejected: empty file",
                 filename=file.filename,
+                user_id=str(user.id),
             )
 
             raise HTTPException(
@@ -85,13 +85,14 @@ async def upload_document(
         document = await service.upload_document(
             filename=file.filename,
             file_bytes=content,
-            uploaded_by="admin",
+            uploaded_by=user.id,
         )
 
         logger.info(
             "Document uploaded successfully",
             document_id=str(document.id),
             filename=file.filename,
+            user_id=str(user.id),
             document_type=(
                 document.document_type.value
                 if document.document_type
@@ -114,6 +115,7 @@ async def upload_document(
         logger.warning(
             "Document upload validation failed",
             filename=file.filename,
+            user_id=str(user.id),
             error=str(exc),
         )
 
@@ -127,6 +129,7 @@ async def upload_document(
         logger.exception(
             "Unexpected error during document upload",
             filename=file.filename,
+            user_id=str(user.id),
             error=str(exc),
         )
 
@@ -145,24 +148,21 @@ async def upload_document(
     response_model=list[DocumentResponse],
 )
 async def list_documents(
+    user: User = Depends(get_current_user),
     service: DocumentService = Depends(
         get_document_service
     ),
 ):
-    """
-    Return all documents.
-    """
 
     try:
 
-        logger.info(
-            "Listing documents"
+        documents = await service.list_documents(
+            user_id=user.id
         )
-
-        documents = await service.list_documents()
 
         logger.info(
             "Documents retrieved successfully",
+            user_id=str(user.id),
             count=len(documents),
         )
 
@@ -172,6 +172,7 @@ async def list_documents(
 
         logger.exception(
             "Failed to list documents",
+            user_id=str(user.id),
             error=str(exc),
         )
 
@@ -191,41 +192,24 @@ async def list_documents(
 )
 async def get_document(
     document_id: UUID,
+    user: User = Depends(get_current_user),
     service: DocumentService = Depends(
         get_document_service
     ),
 ):
-    """
-    Retrieve a single document by ID.
-    """
 
     try:
 
-        logger.info(
-            "Retrieving document",
-            document_id=str(document_id),
-        )
-
         document = await service.get_document(
-            document_id
+            document_id=document_id,
+            user_id=user.id,
         )
 
         if not document:
-
-            logger.warning(
-                "Document not found",
-                document_id=str(document_id),
-            )
-
             raise HTTPException(
                 status_code=404,
                 detail="Document not found.",
             )
-
-        logger.info(
-            "Document retrieved successfully",
-            document_id=str(document_id),
-        )
 
         return document
 
@@ -237,6 +221,7 @@ async def get_document(
         logger.exception(
             "Failed to retrieve document",
             document_id=str(document_id),
+            user_id=str(user.id),
             error=str(exc),
         )
 
@@ -251,31 +236,27 @@ async def get_document(
 # =========================================================
 
 @router.delete(
-    "/{document_id}",)
+    "/{document_id}",
+)
 async def delete_document(
     document_id: UUID,
+    user: User = Depends(get_current_user),
     service: DocumentService = Depends(
         get_document_service
     ),
 ):
-    """
-    Delete a document from storage and the database.
-    """
 
     try:
 
-        logger.info(
-            "Deleting document",
-            document_id=str(document_id),
-        )
-
         await service.delete_document(
-            document_id
+            document_id=document_id,
+            user_id=user.id,
         )
 
         logger.info(
             "Document deleted successfully",
             document_id=str(document_id),
+            user_id=str(user.id),
         )
 
         return {
@@ -283,12 +264,6 @@ async def delete_document(
         }
 
     except ValueError as exc:
-
-        logger.warning(
-            "Document deletion failed",
-            document_id=str(document_id),
-            error=str(exc),
-        )
 
         raise HTTPException(
             status_code=404,
@@ -300,6 +275,7 @@ async def delete_document(
         logger.exception(
             "Unexpected error deleting document",
             document_id=str(document_id),
+            user_id=str(user.id),
             error=str(exc),
         )
 
@@ -319,31 +295,29 @@ async def delete_document(
 )
 async def process_document(
     document_id: UUID,
+    user: User = Depends(get_current_user),
     service: DocumentService = Depends(
         get_document_service
     ),
 ):
-    """
-    Process a document.
-
-    The processing pipeline extracts text from the uploaded
-    file and stores the extracted content in the database.
-    """
 
     try:
 
         logger.info(
             "Starting document processing",
             document_id=str(document_id),
+            user_id=str(user.id),
         )
 
         document = await service.process_document(
-            document_id
+            document_id=document_id,
+            user_id=user.id,
         )
 
         logger.info(
             "Document processed successfully",
             document_id=str(document_id),
+            user_id=str(user.id),
             status=(
                 document.status.value
                 if document.status
@@ -355,24 +329,12 @@ async def process_document(
 
     except ValueError as exc:
 
-        logger.warning(
-            "Document processing validation failed",
-            document_id=str(document_id),
-            error=str(exc),
-        )
-
         raise HTTPException(
-            status_code=400,
+            status_code=404,
             detail=str(exc),
         ) from exc
 
     except FileNotFoundError as exc:
-
-        logger.error(
-            "Document file not found during processing",
-            document_id=str(document_id),
-            error=str(exc),
-        )
 
         raise HTTPException(
             status_code=404,
@@ -384,6 +346,7 @@ async def process_document(
         logger.exception(
             "Unexpected error processing document",
             document_id=str(document_id),
+            user_id=str(user.id),
             error=str(exc),
         )
 

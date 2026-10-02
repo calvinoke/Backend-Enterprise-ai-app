@@ -10,13 +10,12 @@ class DocumentRepository:
         self,
         db: AsyncSession,
     ):
-
         self.db = db
 
     async def create(
         self,
         document: Document,
-    ):
+    ) -> Document:
 
         self.db.add(document)
 
@@ -31,30 +30,52 @@ class DocumentRepository:
     async def get(
         self,
         document_id: UUID,
-    ):
+        user_id: UUID | None = None,
+    ) -> Document | None:
+
+        query = select(Document).where(
+            Document.id == document_id
+        )
+
+        if user_id is not None:
+            query = query.where(
+                Document.uploaded_by == user_id
+            )
 
         result = await self.db.execute(
-            select(Document).where(
-                Document.id == document_id
-            )
+            query
         )
 
         return result.scalar_one_or_none()
 
-    async def list(self):
+    async def list(
+        self,
+        user_id: UUID | None = None,
+    ) -> list[Document]:
 
-        result = await self.db.execute(
-            select(Document).order_by(
-                Document.created_at.desc()
+        query = select(Document)
+
+        if user_id is not None:
+            query = query.where(
+                Document.uploaded_by == user_id
             )
+
+        query = query.order_by(
+            Document.created_at.desc()
         )
 
-        return result.scalars().all()
+        result = await self.db.execute(
+            query
+        )
+
+        return list(
+            result.scalars().all()
+        )
 
     async def update(
         self,
         document: Document,
-    ):
+    ) -> Document:
 
         await self.db.commit()
 
@@ -67,7 +88,7 @@ class DocumentRepository:
     async def delete(
         self,
         document: Document,
-    ):
+    ) -> None:
 
         await self.db.delete(
             document

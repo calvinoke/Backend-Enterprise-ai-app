@@ -3,13 +3,12 @@ from fastapi import (
     Depends,
     HTTPException,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-)
-
+from app.auth.dependencies import get_current_user
 from app.core.config import settings
 from app.database.session import get_db
+from app.users.models import User
 
 from .schemas import (
     RAGAnswerRequest,
@@ -21,7 +20,6 @@ from .schemas import (
     RAGSearchResult,
     RAGSource,
 )
-
 from .service import RAGService
 
 
@@ -32,7 +30,7 @@ router = APIRouter(
 
 
 # =========================================================
-# SEARCH
+# SEMANTIC SEARCH
 # =========================================================
 
 @router.post(
@@ -41,6 +39,9 @@ router = APIRouter(
 )
 async def search_documents(
     request: RAGSearchRequest,
+    user: User = Depends(
+        get_current_user
+    ),
     db: AsyncSession = Depends(
         get_db
     ),
@@ -54,6 +55,7 @@ async def search_documents(
             query=request.query,
             top_k=request.top_k,
             document_id=request.document_id,
+            user_id=user.id,
             similarity_threshold=(
                 request.similarity_threshold
             ),
@@ -65,21 +67,16 @@ async def search_documents(
 
             response_results.append(
                 RAGSearchResult(
-
                     chunk_id=str(
                         chunk.id
                     ),
-
                     document_id=str(
                         chunk.document_id
                     ),
-
                     chunk_index=(
                         chunk.chunk_index
                     ),
-
                     content=chunk.content,
-
                     similarity=round(
                         float(similarity),
                         6,
@@ -88,23 +85,17 @@ async def search_documents(
             )
 
         return RAGSearchResponse(
-
             query=request.query,
-
             provider=(
                 settings.EMBEDDING_PROVIDER
             ),
-
             model=(
                 settings.EMBEDDING_MODEL
             ),
-
             dimension=(
                 settings.VECTOR_DIMENSION
             ),
-
             results=response_results,
-
             count=len(
                 response_results
             ),
@@ -117,16 +108,19 @@ async def search_documents(
             detail=str(exc),
         ) from exc
 
-    except Exception as exc:
+    except Exception:
 
         raise HTTPException(
             status_code=500,
-            detail=str(exc),
-        ) from exc
+            detail=(
+                "Failed to perform "
+                "document search."
+            ),
+        )
 
 
 # =========================================================
-# CONTEXT
+# RETRIEVE CONTEXT
 # =========================================================
 
 @router.post(
@@ -135,6 +129,9 @@ async def search_documents(
 )
 async def retrieve_context(
     request: RAGContextRequest,
+    user: User = Depends(
+        get_current_user
+    ),
     db: AsyncSession = Depends(
         get_db
     ),
@@ -149,13 +146,10 @@ async def retrieve_context(
             context,
             sources,
         ) = await service.retrieve_context(
-
             query=request.query,
-
             top_k=request.top_k,
-
             document_id=request.document_id,
-
+            user_id=user.id,
             similarity_threshold=(
                 request.similarity_threshold
             ),
@@ -167,13 +161,9 @@ async def retrieve_context(
         ]
 
         return RAGContextResponse(
-
             query=request.query,
-
             context=context,
-
             sources=response_sources,
-
             count=len(
                 response_sources
             ),
@@ -186,16 +176,19 @@ async def retrieve_context(
             detail=str(exc),
         ) from exc
 
-    except Exception as exc:
+    except Exception:
 
         raise HTTPException(
             status_code=500,
-            detail=str(exc),
-        ) from exc
+            detail=(
+                "Failed to retrieve "
+                "document context."
+            ),
+        )
 
 
 # =========================================================
-# ANSWER
+# RAG ANSWER
 # =========================================================
 
 @router.post(
@@ -204,6 +197,9 @@ async def retrieve_context(
 )
 async def generate_rag_answer(
     request: RAGAnswerRequest,
+    user: User = Depends(
+        get_current_user
+    ),
     db: AsyncSession = Depends(
         get_db
     ),
@@ -214,19 +210,14 @@ async def generate_rag_answer(
         service = RAGService(db)
 
         result = await service.answer(
-
             query=request.query,
-
             top_k=request.top_k,
-
             document_id=request.document_id,
-
+            user_id=user.id,
             similarity_threshold=(
                 request.similarity_threshold
             ),
-
             temperature=request.temperature,
-
             max_tokens=request.max_tokens,
         )
 
@@ -236,17 +227,11 @@ async def generate_rag_answer(
         ]
 
         return RAGAnswerResponse(
-
             query=request.query,
-
             answer=result["answer"],
-
             provider=result["provider"],
-
             model=result["model"],
-
             sources=response_sources,
-
             source_count=(
                 result["source_count"]
             ),
@@ -259,9 +244,12 @@ async def generate_rag_answer(
             detail=str(exc),
         ) from exc
 
-    except Exception as exc:
+    except Exception:
 
         raise HTTPException(
             status_code=500,
-            detail=str(exc),
-        ) from exc
+            detail=(
+                "Failed to generate "
+                "RAG answer."
+            ),
+        )

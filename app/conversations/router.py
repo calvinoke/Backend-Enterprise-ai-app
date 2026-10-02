@@ -1,11 +1,11 @@
 from uuid import UUID
-
 from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
 )
-
+from app.auth.dependencies import get_current_user
+from app.users.models import User
 from app.conversations.schemas import (
     ConversationCreate,
     ConversationResponse,
@@ -15,23 +15,16 @@ from app.conversations.schemas import (
     ChatResponse,
 )
 
-from app.conversations.service import ConversationService
+from app.conversations.service import (
+    ConversationService,
+)
+
 from app.conversations.dependencies import (
     get_conversation_service,
 )
 
 
 router = APIRouter()
-
-
-# --------------------------------------------------
-# Temporary user id
-# Replace later with current_user from JWT
-# --------------------------------------------------
-
-TEST_USER_ID = UUID(
-    "3fd77472-c21c-4ec6-a8b2-9e5b94b4f921"
-)
 
 
 # --------------------------------------------------
@@ -44,15 +37,25 @@ TEST_USER_ID = UUID(
 )
 async def create_conversation(
     data: ConversationCreate,
+    user: User = Depends(get_current_user),
     service: ConversationService = Depends(
         get_conversation_service
     ),
 ):
 
-    return await service.create_conversation(
-        user_id=TEST_USER_ID,
-        title=data.title,
-    )
+    try:
+
+        return await service.create_conversation(
+            user_id=user.id,
+            title=data.title,
+        )
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
 
 # --------------------------------------------------
@@ -64,14 +67,46 @@ async def create_conversation(
     response_model=list[ConversationResponse],
 )
 async def list_conversations(
+    user: User = Depends(get_current_user),
     service: ConversationService = Depends(
         get_conversation_service
     ),
 ):
 
     return await service.get_user_conversations(
-        TEST_USER_ID
+        user.id
     )
+
+
+# --------------------------------------------------
+# Get Conversation
+# --------------------------------------------------
+
+@router.get(
+    "/{conversation_id}",
+    response_model=ConversationResponse,
+)
+async def get_conversation(
+    conversation_id: UUID,
+    user: User = Depends(get_current_user),
+    service: ConversationService = Depends(
+        get_conversation_service
+    ),
+):
+
+    try:
+
+        return await service.get_conversation(
+            conversation_id=conversation_id,
+            user_id=user.id,
+        )
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
 
 
 # --------------------------------------------------
@@ -84,18 +119,29 @@ async def list_conversations(
 )
 async def get_messages(
     conversation_id: UUID,
+    user: User = Depends(get_current_user),
     service: ConversationService = Depends(
         get_conversation_service
     ),
 ):
 
-    return await service.get_messages(
-        conversation_id
-    )
+    try:
+
+        return await service.get_messages(
+            conversation_id=conversation_id,
+            user_id=user.id,
+        )
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
 
 
 # --------------------------------------------------
-# Add Message
+# Add User Message
 # --------------------------------------------------
 
 @router.post(
@@ -105,16 +151,26 @@ async def get_messages(
 async def add_message(
     conversation_id: UUID,
     data: MessageCreate,
+    user: User = Depends(get_current_user),
     service: ConversationService = Depends(
         get_conversation_service
     ),
 ):
 
-    return await service.add_message(
-        conversation_id=conversation_id,
-        role=data.role,
-        content=data.content,
-    )
+    try:
+
+        return await service.add_message(
+            conversation_id=conversation_id,
+            user_id=user.id,
+            content=data.content,
+        )
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
 
 
 # --------------------------------------------------
@@ -126,6 +182,7 @@ async def add_message(
 )
 async def delete_conversation(
     conversation_id: UUID,
+    user: User = Depends(get_current_user),
     service: ConversationService = Depends(
         get_conversation_service
     ),
@@ -134,19 +191,20 @@ async def delete_conversation(
     try:
 
         await service.delete_conversation(
-            conversation_id
+            conversation_id=conversation_id,
+            user_id=user.id,
         )
 
         return {
             "message": "Conversation deleted successfully."
         }
 
-    except ValueError as e:
+    except ValueError as exc:
 
         raise HTTPException(
             status_code=404,
-            detail=str(e),
-        )
+            detail=str(exc),
+        ) from exc
 
 
 # --------------------------------------------------
@@ -160,6 +218,7 @@ async def delete_conversation(
 async def chat(
     conversation_id: UUID,
     data: ChatRequest,
+    user: User = Depends(get_current_user),
     service: ConversationService = Depends(
         get_conversation_service
     ),
@@ -169,19 +228,21 @@ async def chat(
 
         return await service.chat(
             conversation_id=conversation_id,
+            user_id=user.id,
             question=data.question,
+            document_id=data.document_id,
         )
 
-    except ValueError as e:
+    except ValueError as exc:
 
         raise HTTPException(
             status_code=404,
-            detail=str(e),
-        )
+            detail=str(exc),
+        ) from exc
 
-    except Exception as e:
+    except Exception:
 
         raise HTTPException(
             status_code=500,
-            detail=str(e),
+            detail="An unexpected error occurred while processing the chat request.",
         )

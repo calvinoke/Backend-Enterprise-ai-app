@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
+
 from .models import (
     DocumentStatus,
     DocumentType,
@@ -9,7 +10,6 @@ from .models import (
 
 
 class DocumentUploadResponse(BaseModel):
-
     id: UUID
     filename: str
     original_filename: str
@@ -22,16 +22,13 @@ class DocumentUploadResponse(BaseModel):
 
 
 class DocumentResponse(BaseModel):
-
     id: UUID
     filename: str
     original_filename: str
     document_type: DocumentType
     status: DocumentStatus
     content: str | None
-
-    uploaded_by: str
-
+    uploaded_by: UUID
     created_at: datetime
     updated_at: datetime
 

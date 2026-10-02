@@ -1,13 +1,12 @@
 import logging
 from pathlib import Path
 from uuid import UUID, uuid4
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.embeddings.service import EmbeddingService
 from app.rag.repository import DocumentChunkRepository
+from app.documents.loader.factory import LoaderFactory
 
-from app.documents.loader.factory import (
-    LoaderFactory,
-)
 from .chunker import DocumentChunker
 from .models import (
     Document,
@@ -31,13 +30,9 @@ UPLOAD_DIRECTORY.mkdir(
 
 
 ALLOWED_EXTENSIONS = {
-
     "pdf": DocumentType.PDF,
-
     "docx": DocumentType.DOCX,
-
     "txt": DocumentType.TXT,
-
     "md": DocumentType.MD,
 }
 
@@ -48,7 +43,6 @@ class DocumentService:
         self,
         db: AsyncSession,
     ):
-
         self.db = db
 
         self.repo = DocumentRepository(
@@ -73,8 +67,8 @@ class DocumentService:
         self,
         filename: str,
         file_bytes: bytes,
-        uploaded_by: str,
-    ):
+        uploaded_by: UUID,
+    ) -> Document:
 
         if not filename:
             raise ValueError(
@@ -89,14 +83,12 @@ class DocumentService:
         )
 
         if extension not in ALLOWED_EXTENSIONS:
-
             raise ValueError(
                 "Unsupported document type. "
                 f"Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
             )
 
         if not file_bytes:
-
             raise ValueError(
                 "Uploaded file is empty."
             )
@@ -115,19 +107,14 @@ class DocumentService:
         )
 
         document = Document(
-
             filename=stored_name,
-
             original_filename=filename,
-
             document_type=(
                 ALLOWED_EXTENSIONS[
                     extension
                 ]
             ),
-
             status=DocumentStatus.PENDING,
-
             uploaded_by=uploaded_by,
         )
 
@@ -139,9 +126,14 @@ class DocumentService:
     # LIST
     # =====================================================
 
-    async def list_documents(self):
+    async def list_documents(
+        self,
+        user_id: UUID,
+    ):
 
-        return await self.repo.list()
+        return await self.repo.list(
+            user_id=user_id
+        )
 
     # =====================================================
     # GET
@@ -150,10 +142,12 @@ class DocumentService:
     async def get_document(
         self,
         document_id: UUID,
+        user_id: UUID,
     ):
 
         return await self.repo.get(
-            document_id
+            document_id=document_id,
+            user_id=user_id,
         )
 
     # =====================================================
@@ -163,14 +157,15 @@ class DocumentService:
     async def delete_document(
         self,
         document_id: UUID,
+        user_id: UUID,
     ):
 
         document = await self.repo.get(
-            document_id
+            document_id=document_id,
+            user_id=user_id,
         )
 
         if not document:
-
             raise ValueError(
                 "Document not found."
             )
@@ -181,7 +176,6 @@ class DocumentService:
         )
 
         if path.exists():
-
             path.unlink()
 
         await self.repo.delete(
@@ -195,14 +189,15 @@ class DocumentService:
     async def process_document(
         self,
         document_id: UUID,
+        user_id: UUID,
     ):
 
         document = await self.repo.get(
-            document_id
+            document_id=document_id,
+            user_id=user_id,
         )
 
         if not document:
-
             raise ValueError(
                 "Document not found."
             )
@@ -231,7 +226,6 @@ class DocumentService:
             )
 
             if not path.exists():
-
                 raise FileNotFoundError(
                     "Stored document file is missing."
                 )
@@ -245,7 +239,6 @@ class DocumentService:
             )
 
             if not loader:
-
                 raise ValueError(
                     "No loader available for "
                     f"{document.document_type}."
@@ -256,7 +249,6 @@ class DocumentService:
             )
 
             if not text or not text.strip():
-
                 raise ValueError(
                     "No text could be extracted "
                     "from the document."
@@ -289,7 +281,6 @@ class DocumentService:
             )
 
             if not chunks:
-
                 raise ValueError(
                     "Document produced no chunks."
                 )
@@ -311,7 +302,6 @@ class DocumentService:
             )
 
             if len(embeddings) != len(chunks):
-
                 raise ValueError(
                     "Number of embeddings does not "
                     "match number of chunks."

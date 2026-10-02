@@ -1,8 +1,11 @@
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.embeddings.service import EmbeddingService
 from app.llm.service import LLMService
+
 from .repository import DocumentChunkRepository
 
 
@@ -12,7 +15,6 @@ class RAGService:
         self,
         session: AsyncSession,
     ):
-
         self.session = session
 
         self.embedding_service = (
@@ -38,41 +40,30 @@ class RAGService:
         query: str,
         top_k: int = 5,
         document_id: str | None = None,
+        user_id: UUID | None = None,
         similarity_threshold: float = 0.5,
     ):
 
         query = query.strip()
 
         if not query:
-
             raise ValueError(
                 "Search query cannot be empty."
             )
 
-        # -------------------------------------------------
-        # 1. Generate query embedding
-        # -------------------------------------------------
-
         query_embedding = (
-            await self.embedding_service
-            .generate_embedding(
+            await self.embedding_service.generate_embedding(
                 query
             )
         )
 
-        # -------------------------------------------------
-        # 2. Search pgvector
-        # -------------------------------------------------
-
         results = (
-            await self.repository
-            .similarity_search(
+            await self.repository.similarity_search(
                 query_embedding=query_embedding,
                 top_k=top_k,
                 document_id=document_id,
-                similarity_threshold=(
-                    similarity_threshold
-                ),
+                user_id=user_id,
+                similarity_threshold=similarity_threshold,
             )
         )
 
@@ -88,7 +79,6 @@ class RAGService:
     ) -> str:
 
         if not results:
-
             return ""
 
         context_parts = []
@@ -102,16 +92,11 @@ class RAGService:
         ):
 
             context_parts.append(
-                (
-                    f"[Source {index}]\n"
-                    f"Document ID: "
-                    f"{chunk.document_id}\n"
-                    f"Chunk: "
-                    f"{chunk.chunk_index}\n"
-                    f"Similarity: "
-                    f"{similarity:.4f}\n\n"
-                    f"{chunk.content}"
-                )
+                f"[Source {index}]\n"
+                f"Document ID: {chunk.document_id}\n"
+                f"Chunk: {chunk.chunk_index}\n"
+                f"Similarity: {similarity:.4f}\n\n"
+                f"{chunk.content}"
             )
 
         return "\n\n".join(
@@ -139,9 +124,7 @@ class RAGService:
                     "document_id": str(
                         chunk.document_id
                     ),
-                    "chunk_index": (
-                        chunk.chunk_index
-                    ),
+                    "chunk_index": chunk.chunk_index,
                     "content": chunk.content,
                     "similarity": round(
                         float(similarity),
@@ -161,6 +144,7 @@ class RAGService:
         query: str,
         top_k: int = 5,
         document_id: str | None = None,
+        user_id: UUID | None = None,
         similarity_threshold: float = 0.5,
     ):
 
@@ -168,9 +152,8 @@ class RAGService:
             query=query,
             top_k=top_k,
             document_id=document_id,
-            similarity_threshold=(
-                similarity_threshold
-            ),
+            user_id=user_id,
+            similarity_threshold=similarity_threshold,
         )
 
         context = self.build_context(
@@ -188,7 +171,7 @@ class RAGService:
         )
 
     # =====================================================
-    # GENERATE GROUNDED ANSWER
+    # RAG ANSWER
     # =====================================================
 
     async def answer(
@@ -196,6 +179,7 @@ class RAGService:
         query: str,
         top_k: int = 5,
         document_id: str | None = None,
+        user_id: UUID | None = None,
         similarity_threshold: float = 0.5,
         temperature: float = 0.2,
         max_tokens: int = 1024,
@@ -204,49 +188,42 @@ class RAGService:
         query = query.strip()
 
         if not query:
-
             raise ValueError(
                 "Question cannot be empty."
             )
 
-        # -------------------------------------------------
-        # 1. Retrieve relevant documents
-        # -------------------------------------------------
-
-        results, context, sources = (
-            await self.retrieve_context(
-                query=query,
-                top_k=top_k,
-                document_id=document_id,
-                similarity_threshold=(
-                    similarity_threshold
-                ),
-            )
+        (
+            results,
+            context,
+            sources,
+        ) = await self.retrieve_context(
+            query=query,
+            top_k=top_k,
+            document_id=document_id,
+            user_id=user_id,
+            similarity_threshold=similarity_threshold,
         )
 
         # -------------------------------------------------
-        # 2. No relevant information
+        # NO RELEVANT DOCUMENTS
         # -------------------------------------------------
 
         if not results:
 
             return {
                 "answer": (
-                    "I could not find "
-                    "relevant information "
-                    "in the provided documents "
-                    "to answer this question."
+                    "I could not find relevant "
+                    "information in the provided "
+                    "documents to answer this question."
                 ),
                 "sources": [],
                 "source_count": 0,
-                "provider": (
-                    settings.AI_PROVIDER
-                ),
+                "provider": settings.AI_PROVIDER,
                 "model": settings.AI_MODEL,
             }
 
         # -------------------------------------------------
-        # 3. System instruction
+        # SYSTEM PROMPT
         # -------------------------------------------------
 
         system_prompt = """
@@ -271,7 +248,7 @@ Keep the answer clear, accurate and concise.
 """.strip()
 
         # -------------------------------------------------
-        # 4. Build grounded prompt
+        # USER PROMPT
         # -------------------------------------------------
 
         prompt = f"""
@@ -295,7 +272,7 @@ If the context is insufficient, say so explicitly.
 """.strip()
 
         # -------------------------------------------------
-        # 5. Generate LLM answer
+        # GENERATE ANSWER
         # -------------------------------------------------
 
         answer = await self.llm_service.generate(
@@ -306,17 +283,13 @@ If the context is insufficient, say so explicitly.
         )
 
         # -------------------------------------------------
-        # 6. Return answer + sources
+        # RESPONSE
         # -------------------------------------------------
 
         return {
             "answer": answer,
             "sources": sources,
-            "source_count": len(
-                sources
-            ),
-            "provider": (
-                settings.AI_PROVIDER
-            ),
+            "source_count": len(sources),
+            "provider": settings.AI_PROVIDER,
             "model": settings.AI_MODEL,
         }

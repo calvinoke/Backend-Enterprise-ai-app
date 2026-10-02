@@ -1,7 +1,6 @@
 from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.conversations.models import (
     Conversation,
     Message,
@@ -33,17 +32,22 @@ class ConversationRepository:
 
         return conversation
 
-
     async def get_conversation(
         self,
         conversation_id: UUID,
+        user_id: UUID | None = None,
     ) -> Conversation | None:
 
-        result = await self.db.execute(
-            select(Conversation).where(
-                Conversation.id == conversation_id
-            )
+        query = select(Conversation).where(
+            Conversation.id == conversation_id
         )
+
+        if user_id is not None:
+            query = query.where(
+                Conversation.user_id == user_id
+            )
+
+        result = await self.db.execute(query)
 
         return result.scalar_one_or_none()
 
@@ -99,21 +103,14 @@ class ConversationRepository:
     ) -> list[Message]:
 
         result = await self.db.execute(
-
-            select(
-                Message
-            )
-
+            select(Message)
             .where(
                 Message.conversation_id
-                ==
-                conversation_id
+                == conversation_id
             )
-
             .order_by(
                 Message.created_at.asc()
             )
-
         )
 
         return result.scalars().all()

@@ -1,45 +1,82 @@
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.users.models import User
-from uuid import UUID
-from sqlalchemy import select
 
 
 class UserRepository:
     """
-    Handles database operations for users.
+    Database operations for the User model.
     """
-
 
     def __init__(
         self,
-        db: AsyncSession
+        db: AsyncSession,
     ):
         self.db = db
 
-
+    # ========================================================
+    # GET BY EMAIL
+    # ========================================================
 
     async def get_by_email(
         self,
-        email: str
+        email: str,
     ) -> User | None:
-
         result = await self.db.execute(
-            select(User)
-            .where(
+            select(User).where(
                 User.email == email
             )
         )
 
         return result.scalar_one_or_none()
 
+    # ========================================================
+    # GET BY ID
+    # ========================================================
 
+    async def get_by_id(
+        self,
+        user_id: UUID,
+    ) -> User | None:
+        result = await self.db.execute(
+            select(User).where(
+                User.id == user_id
+            )
+        )
+
+        return result.scalar_one_or_none()
+
+    # ========================================================
+    # GET ALL USERS
+    # ========================================================
+
+    async def get_all(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> list[User]:
+        result = await self.db.execute(
+            select(User)
+            .order_by(User.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+
+        return list(
+            result.scalars().all()
+        )
+
+    # ========================================================
+    # CREATE
+    # ========================================================
 
     async def create(
         self,
-        user: User
+        user: User,
     ) -> User:
-
         self.db.add(user)
 
         await self.db.commit()
@@ -47,20 +84,29 @@ class UserRepository:
         await self.db.refresh(user)
 
         return user
-    
 
+    # ========================================================
+    # UPDATE
+    # ========================================================
 
+    async def update(
+        self,
+        user: User,
+    ) -> User:
+        await self.db.commit()
 
-async def get_by_id(
-    self,
-    user_id: UUID
-):
+        await self.db.refresh(user)
 
-    result = await self.db.execute(
-        select(User)
-        .where(
-            User.id == user_id
-        )
-    )
+        return user
 
-    return result.scalar_one_or_none()
+    # ========================================================
+    # DELETE
+    # ========================================================
+
+    async def delete(
+        self,
+        user: User,
+    ) -> None:
+        await self.db.delete(user)
+
+        await self.db.commit()
