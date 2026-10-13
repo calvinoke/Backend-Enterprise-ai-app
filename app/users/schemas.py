@@ -9,51 +9,104 @@ from pydantic import (
     field_validator,
 )
 
+from app.auth.security import validate_password_strength
+from app.users.enums import UserRole
+
 
 # ============================================================
-# USER CREATION
+# PUBLIC USER CREATION
 # ============================================================
 
 class UserCreate(BaseModel):
     """
-    Schema used when creating a new user account.
+    Schema used for public registration.
+
+    Public users cannot choose their role.
+    They always start as USER.
     """
 
     first_name: str = Field(
         min_length=1,
         max_length=100,
-        description="User's first name.",
     )
 
     last_name: str = Field(
         min_length=1,
         max_length=100,
-        description="User's last name.",
     )
 
-    email: EmailStr = Field(
-        description="User's email address.",
-    )
+    email: EmailStr
 
     password: str = Field(
         min_length=8,
         max_length=128,
-        description="User's account password.",
     )
 
     @field_validator("first_name", "last_name")
     @classmethod
     def validate_names(cls, value: str) -> str:
-        """
-        Remove unnecessary spaces and prevent empty names.
-        """
-
         value = value.strip()
 
         if not value:
-            raise ValueError("Name cannot be empty.")
+            raise ValueError(
+                "Name cannot be empty."
+            )
 
         return value
+
+
+# ============================================================
+# ADMIN USER CREATION
+# ============================================================
+
+class AdminUserCreate(BaseModel):
+    """
+    Schema used by administrators to create users.
+
+    An administrator may choose whether the new account is
+    USER or ADMIN.
+    """
+
+    first_name: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+    last_name: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+    email: EmailStr
+
+    password: str = Field(
+        min_length=8,
+        max_length=128,
+    )
+
+    role: UserRole = Field(
+        default=UserRole.USER,
+    )
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def validate_names(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError(
+                "Name cannot be empty."
+            )
+
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(
+        cls,
+        value: str,
+    ) -> str:
+        return validate_password_strength(value)
 
 
 # ============================================================
@@ -62,36 +115,34 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     """
-    Schema used when a user updates their profile.
+    Schema for updating personal user information.
 
-    All fields are optional because the endpoint uses PATCH.
+    Role, active status, and verification status cannot be
+    modified through this schema.
     """
 
     first_name: str | None = Field(
         default=None,
         min_length=1,
         max_length=100,
-        description="Updated first name.",
     )
 
     last_name: str | None = Field(
         default=None,
         min_length=1,
         max_length=100,
-        description="Updated last name.",
     )
 
     email: EmailStr | None = Field(
         default=None,
-        description="Updated email address.",
     )
 
     @field_validator("first_name", "last_name")
     @classmethod
-    def validate_names(cls, value: str | None) -> str | None:
-        """
-        Remove unnecessary spaces and prevent empty names.
-        """
+    def validate_names(
+        cls,
+        value: str | None,
+    ) -> str | None:
 
         if value is None:
             return None
@@ -99,9 +150,23 @@ class UserUpdate(BaseModel):
         value = value.strip()
 
         if not value:
-            raise ValueError("Name cannot be empty.")
+            raise ValueError(
+                "Name cannot be empty."
+            )
 
         return value
+
+
+# ============================================================
+# ROLE UPDATE
+# ============================================================
+
+class UserRoleUpdate(BaseModel):
+    """
+    Schema used by administrators to change a user's role.
+    """
+
+    role: UserRole
 
 
 # ============================================================
@@ -110,7 +175,7 @@ class UserUpdate(BaseModel):
 
 class UserResponse(BaseModel):
     """
-    Schema returned by the API when exposing user information.
+    User representation returned by the API.
     """
 
     id: UUID
@@ -120,7 +185,7 @@ class UserResponse(BaseModel):
 
     email: EmailStr
 
-    role: str
+    role: UserRole
 
     is_active: bool
     is_verified: bool

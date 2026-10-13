@@ -4,6 +4,147 @@ import smtplib
 from email.message import EmailMessage
 
 
+# ============================================================
+# SMTP CONFIGURATION
+# ============================================================
+
+def _get_smtp_config() -> dict:
+    """
+    Read SMTP configuration from environment variables.
+    """
+
+    return {
+        "host": os.getenv("SMTP_HOST"),
+        "port": int(
+            os.getenv(
+                "SMTP_PORT",
+                "587",
+            )
+        ),
+        "username": os.getenv(
+            "SMTP_USERNAME"
+        ),
+        "password": os.getenv(
+            "SMTP_PASSWORD"
+        ),
+        "from_email": os.getenv(
+            "SMTP_FROM_EMAIL"
+        ),
+        "from_name": os.getenv(
+            "SMTP_FROM_NAME",
+            "Enterprise AI Platform",
+        ),
+        "app_env": os.getenv(
+            "APP_ENV",
+            "development",
+        ).lower(),
+    }
+
+
+# ============================================================
+# GENERIC SMTP SEND
+# ============================================================
+
+async def _send_email_message(
+    message: EmailMessage,
+) -> None:
+    """
+    Send an EmailMessage without blocking the
+    asynchronous FastAPI event loop.
+    """
+
+    config = _get_smtp_config()
+
+    smtp_host = config["host"]
+    smtp_port = config["port"]
+    smtp_username = config["username"]
+    smtp_password = config["password"]
+    app_env = config["app_env"]
+
+    # --------------------------------------------------------
+    # SMTP MUST BE CONFIGURED IN PRODUCTION
+    # --------------------------------------------------------
+
+    if not smtp_host:
+        if app_env != "production":
+            raise RuntimeError(
+                "SMTP is not configured."
+            )
+
+        raise RuntimeError(
+            "SMTP is not configured for production."
+        )
+
+    # --------------------------------------------------------
+    # SEND EMAIL IN A BACKGROUND THREAD
+    # --------------------------------------------------------
+
+    def send_email() -> None:
+        # ----------------------------------------------------
+        # SMTP SSL
+        # ----------------------------------------------------
+
+        if smtp_port == 465:
+
+            with smtplib.SMTP_SSL(
+                smtp_host,
+                smtp_port,
+                timeout=15,
+            ) as server:
+
+                if (
+                    smtp_username
+                    and smtp_password
+                ):
+                    server.login(
+                        smtp_username,
+                        smtp_password,
+                    )
+
+                server.send_message(
+                    message
+                )
+
+        # ----------------------------------------------------
+        # SMTP + STARTTLS
+        # ----------------------------------------------------
+
+        else:
+
+            with smtplib.SMTP(
+                smtp_host,
+                smtp_port,
+                timeout=15,
+            ) as server:
+
+                server.ehlo()
+
+                server.starttls()
+
+                server.ehlo()
+
+                if (
+                    smtp_username
+                    and smtp_password
+                ):
+                    server.login(
+                        smtp_username,
+                        smtp_password,
+                    )
+
+                server.send_message(
+                    message
+                )
+
+    await asyncio.to_thread(
+        send_email
+    )
+
+
+# ============================================================
+# PASSWORD RESET EMAIL
+# ============================================================
+
 async def send_password_reset_email(
     to_email: str,
     reset_link: str,
@@ -12,61 +153,29 @@ async def send_password_reset_email(
     """
     Send a password-reset email.
 
-    SMTP configuration is read from environment variables.
-
     Development behavior:
-    If SMTP is not configured, the reset link is printed/logged
-    so the flow can still be tested locally.
+    When SMTP is not configured, the reset link is
+    printed to the terminal.
 
     Production behavior:
-    SMTP should always be configured.
+    SMTP must be configured.
     """
 
-    smtp_host = os.getenv(
-        "SMTP_HOST"
-    )
+    config = _get_smtp_config()
 
-    smtp_port = int(
-        os.getenv(
-            "SMTP_PORT",
-            "587",
-        )
-    )
+    smtp_host = config["host"]
+    smtp_from_email = config["from_email"]
+    smtp_from_name = config["from_name"]
+    app_env = config["app_env"]
 
-    smtp_username = os.getenv(
-        "SMTP_USERNAME"
-    )
-
-    smtp_password = os.getenv(
-        "SMTP_PASSWORD"
-    )
-
-    smtp_from_email = os.getenv(
-        "SMTP_FROM_EMAIL"
-    )
-
-    smtp_from_name = os.getenv(
-        "SMTP_FROM_NAME",
-        "Enterprise AI Platform",
-    )
-
-    frontend_url = os.getenv(
-        "FRONTEND_URL",
-        "http://localhost:5173",
-    )
-
-    app_env = os.getenv(
-        "APP_ENV",
-        "development",
-    ).lower()
-
-    # =========================================
+    # ========================================================
     # DEVELOPMENT FALLBACK
-    # =========================================
+    # ========================================================
 
     if not smtp_host or not smtp_from_email:
 
         if app_env != "production":
+
             print(
                 "\n"
                 "=========================================\n"
@@ -84,9 +193,9 @@ async def send_password_reset_email(
             "SMTP is not configured for production."
         )
 
-    # =========================================
-    # BUILD EMAIL
-    # =========================================
+    # ========================================================
+    # BUILD PASSWORD RESET EMAIL
+    # ========================================================
 
     message = EmailMessage()
 
@@ -121,52 +230,109 @@ Regards,
 """.strip()
     )
 
-    # =========================================
-    # SEND EMAIL WITHOUT BLOCKING ASYNC SERVER
-    # =========================================
+    # ========================================================
+    # SEND
+    # ========================================================
 
-    def send_email() -> None:
+    await _send_email_message(
+        message
+    )
 
-        if smtp_port == 465:
 
-            with smtplib.SMTP_SSL(
-                smtp_host,
-                smtp_port,
-                timeout=15,
-            ) as server:
+# ============================================================
+# EMAIL VERIFICATION
+# ============================================================
 
-                if smtp_username and smtp_password:
-                    server.login(
-                        smtp_username,
-                        smtp_password,
-                    )
+async def send_email_verification_email(
+    to_email: str,
+    verification_link: str,
+    expires_hours: int,
+) -> None:
+    """
+    Send an email verification message.
 
-                server.send_message(
-                    message
-                )
+    Development behavior:
+    When SMTP is not configured, the verification link
+    is printed to the terminal.
 
-        else:
+    Production behavior:
+    SMTP must be configured.
+    """
 
-            with smtplib.SMTP(
-                smtp_host,
-                smtp_port,
-                timeout=15,
-            ) as server:
+    config = _get_smtp_config()
 
-                server.ehlo()
-                server.starttls()
-                server.ehlo()
+    smtp_host = config["host"]
+    smtp_from_email = config["from_email"]
+    smtp_from_name = config["from_name"]
+    app_env = config["app_env"]
 
-                if smtp_username and smtp_password:
-                    server.login(
-                        smtp_username,
-                        smtp_password,
-                    )
+    # ========================================================
+    # DEVELOPMENT FALLBACK
+    # ========================================================
 
-                server.send_message(
-                    message
-                )
+    if not smtp_host or not smtp_from_email:
 
-    await asyncio.to_thread(
-        send_email
+        if app_env != "production":
+
+            print(
+                "\n"
+                "=========================================\n"
+                "EMAIL VERIFICATION LINK - DEVELOPMENT ONLY\n"
+                "=========================================\n"
+                f"Email: {to_email}\n"
+                f"Verification link: {verification_link}\n"
+                f"Expires in: {expires_hours} hours\n"
+                "=========================================\n"
+            )
+
+            return
+
+        raise RuntimeError(
+            "SMTP is not configured for production."
+        )
+
+    # ========================================================
+    # BUILD VERIFICATION EMAIL
+    # ========================================================
+
+    message = EmailMessage()
+
+    message["Subject"] = (
+        "Verify your Enterprise AI Platform email"
+    )
+
+    message["From"] = (
+        f"{smtp_from_name} <{smtp_from_email}>"
+    )
+
+    message["To"] = to_email
+
+    message.set_content(
+        f"""
+Hello,
+
+Thank you for creating an account on the
+Enterprise AI Platform.
+
+Please verify your email address by opening
+the following link:
+
+{verification_link}
+
+This verification link expires in {expires_hours} hours.
+
+If you did not create this account, you can
+safely ignore this email.
+
+Regards,
+{smtp_from_name}
+""".strip()
+    )
+
+    # ========================================================
+    # SEND
+    # ========================================================
+
+    await _send_email_message(
+        message
     )

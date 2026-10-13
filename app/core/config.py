@@ -71,11 +71,27 @@ class Settings(BaseSettings):
     # EMBEDDING PROVIDER
     # =====================================================
 
-    EMBEDDING_PROVIDER: str = "ollama"
+    #EMBEDDING_PROVIDER: str = "ollama"
 
-    EMBEDDING_MODEL: str = "nomic-embed-text"
+    #EMBEDDING_MODEL: str = "nomic-embed-text"
 
+    #VECTOR_DIMENSION: int = 768
+
+    # =====================================================
+    # EMBEDDING PROVIDER
+    # =====================================================
+
+    #EMBEDDING_PROVIDER: str = "huggingface"
+
+    #EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
+
+   # VECTOR_DIMENSION: int = 384
+
+    # EMBEDDING PROVIDER
+    EMBEDDING_PROVIDER: str = "gemini"
+    EMBEDDING_MODEL: str = "gemini-embedding-2"
     VECTOR_DIMENSION: int = 768
+
 
 
     # =====================================================
@@ -90,7 +106,7 @@ class Settings(BaseSettings):
 
     HUGGINGFACE_API_KEY: str | None = None
 
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    #OLLAMA_BASE_URL: str = "http://localhost:11434"
 
 
     # =====================================================
@@ -101,6 +117,31 @@ class Settings(BaseSettings):
         env_file=".env",
         case_sensitive=True,
     )
+
+        # =====================================================
+    # APPLICATION ENVIRONMENT
+    # =====================================================
+
+    APP_ENV: str = "development"
+
+    FRONTEND_URL: str = "http://localhost:5173"
+
+    # =====================================================
+    # EMAIL / SMTP CONFIGURATION
+    # =====================================================
+
+    SMTP_HOST: str = ""
+
+    SMTP_PORT: int = 587
+
+    SMTP_USERNAME: str = ""
+
+    SMTP_PASSWORD: str = ""
+
+    SMTP_FROM_EMAIL: str = ""
+
+    SMTP_FROM_NAME: str = "Enterprise AI Platform"
+
 
 
 @lru_cache

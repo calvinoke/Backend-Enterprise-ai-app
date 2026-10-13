@@ -17,7 +17,12 @@ from app.users.dependencies import (
     require_self_or_admin,
 )
 from app.users.models import User
-from app.users.schemas import UserResponse, UserUpdate
+from app.users.schemas import (
+    AdminUserCreate,
+    UserResponse,
+    UserRoleUpdate,
+    UserUpdate,
+)
 from app.users.service import UserService
 
 
@@ -76,7 +81,7 @@ async def update_me(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
-        )
+        ) from exc
 
     return UserResponse.model_validate(
         user
@@ -101,7 +106,7 @@ async def get_users(
         ge=1,
         le=100,
     ),
-    current_admin: User = Depends(require_admin),
+    _current_admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> list[UserResponse]:
     """
@@ -124,6 +129,51 @@ async def get_users(
 
 
 # ============================================================
+# CREATE USER - ADMIN ONLY
+# ============================================================
+
+@router.post(
+    "",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_user(
+    data: AdminUserCreate,
+    current_admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> UserResponse:
+    """
+    Allow an administrator to create a new user.
+
+    The administrator can choose the initial role.
+    """
+
+    service = UserService(db)
+
+    try:
+        user = await service.create_user(
+            current_admin=current_admin,
+            data=data,
+        )
+
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return UserResponse.model_validate(
+        user
+    )
+
+
+# ============================================================
 # GET USER BY ID
 # ============================================================
 
@@ -133,9 +183,7 @@ async def get_users(
 )
 async def get_user(
     user_id: UUID,
-    current_user: User = Depends(
-        require_self_or_admin
-    ),
+    _current_user: User = Depends(require_self_or_admin),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """
@@ -156,7 +204,7 @@ async def get_user(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
-        )
+        ) from exc
 
     return UserResponse.model_validate(
         user
@@ -174,9 +222,7 @@ async def get_user(
 async def update_user(
     user_id: UUID,
     data: UserUpdate,
-    current_user: User = Depends(
-        require_self_or_admin
-    ),
+    _current_user: User = Depends(require_self_or_admin),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """
@@ -210,7 +256,7 @@ async def update_user(
         raise HTTPException(
             status_code=status_code,
             detail=str(exc),
-        )
+        ) from exc
 
     return UserResponse.model_validate(
         user
@@ -218,37 +264,43 @@ async def update_user(
 
 
 # ============================================================
-# DELETE USER - ADMIN ONLY
+# UPDATE USER ROLE - ADMIN ONLY
 # ============================================================
 
-@router.delete(
-    "/{user_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+@router.patch(
+    "/{user_id}/role",
+    response_model=UserResponse,
 )
-async def delete_user(
+async def update_user_role(
     user_id: UUID,
+    data: UserRoleUpdate,
     current_admin: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
-) -> Response:
+) -> UserResponse:
     """
-    Permanently delete a user.
+    Change the role of a user.
 
     Administrator access only.
+
+    An administrator can promote a user to admin
+    or demote an admin to user, subject to the
+    business rules enforced by UserService.
     """
 
     service = UserService(db)
 
     try:
-        await service.delete_user(
+        user = await service.update_user_role(
             current_admin=current_admin,
             target_user_id=user_id,
+            role=data.role,
         )
 
     except PermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
-        )
+        ) from exc
 
     except ValueError as exc:
         status_code = (
@@ -260,10 +312,10 @@ async def delete_user(
         raise HTTPException(
             status_code=status_code,
             detail=str(exc),
-        )
+        ) from exc
 
-    return Response(
-        status_code=status.HTTP_204_NO_CONTENT
+    return UserResponse.model_validate(
+        user
     )
 
 
@@ -298,13 +350,13 @@ async def activate_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
-        )
+        ) from exc
 
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
-        )
+        ) from exc
 
     return UserResponse.model_validate(
         user
@@ -328,6 +380,9 @@ async def deactivate_user(
     Deactivate a user account.
 
     Administrator access only.
+
+    Business rules such as protecting the last
+    active administrator are enforced by UserService.
     """
 
     service = UserService(db)
@@ -342,18 +397,74 @@ async def deactivate_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
-        )
+        ) from exc
 
     except ValueError as exc:
-        raise HTTPException(
-            status_code=(
-                status.HTTP_404_NOT_FOUND
-                if str(exc) == "User not found."
-                else status.HTTP_400_BAD_REQUEST
-            ),
-            detail=str(exc),
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if str(exc) == "User not found."
+            else status.HTTP_400_BAD_REQUEST
         )
+
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
 
     return UserResponse.model_validate(
         user
+    )
+
+
+# ============================================================
+# DELETE USER - ADMIN ONLY
+# ============================================================
+
+@router.delete(
+    "/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_user(
+    user_id: UUID,
+    current_admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """
+    Permanently delete a user.
+
+    Administrator access only.
+
+    Business rules such as preventing deletion of
+    the last active administrator are enforced by
+    UserService.
+    """
+
+    service = UserService(db)
+
+    try:
+        await service.delete_user(
+            current_admin=current_admin,
+            target_user_id=user_id,
+        )
+
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if str(exc) == "User not found."
+            else status.HTTP_400_BAD_REQUEST
+        )
+
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT
     )

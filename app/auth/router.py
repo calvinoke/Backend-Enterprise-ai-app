@@ -34,7 +34,7 @@ from app.users.schemas import (
     UserResponse,
 )
 
-from sqlalchemy.ext.asyncio import AsyncSession
+#from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.email_verification_service import (
     EmailVerificationService,

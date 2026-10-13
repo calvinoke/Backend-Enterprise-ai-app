@@ -1,6 +1,12 @@
-from datetime import datetime, timedelta, timezone
+from datetime import (
+    datetime,
+    timedelta,
+    timezone,
+)
 import os
 from urllib.parse import quote
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.email_verification_repository import (
     EmailVerificationRepository,
@@ -27,6 +33,10 @@ from app.notifications.email_service import (
 from app.users.repository import UserRepository
 
 
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
 EMAIL_VERIFICATION_EXPIRY_HOURS = 24
 
 
@@ -38,26 +48,37 @@ class EmailVerificationService:
 
     def __init__(
         self,
-        db,
+        db: AsyncSession,
     ):
         self.db = db
 
         self.repository = (
-            EmailVerificationRepository(db)
+            EmailVerificationRepository(
+                db
+            )
         )
 
         self.user_repository = (
-            UserRepository(db)
+            UserRepository(
+                db
+            )
         )
 
-    # =========================================
+    # ========================================================
     # SEND VERIFICATION
-    # =========================================
+    # ========================================================
 
     async def send_verification(
         self,
         email: str,
     ) -> None:
+        """
+        Create and send a new email verification token.
+
+        Unknown email addresses are handled generically
+        by returning without exposing whether the account
+        exists.
+        """
 
         email = (
             email
@@ -65,15 +86,19 @@ class EmailVerificationService:
             .lower()
         )
 
+        # ----------------------------------------------------
+        # Find user
+        # ----------------------------------------------------
+
         user = (
             await self.user_repository.get_by_email(
                 email
             )
         )
 
-        # --------------------------------------
+        # ----------------------------------------------------
         # Generic behavior
-        # --------------------------------------
+        # ----------------------------------------------------
 
         if not user:
             return
@@ -81,9 +106,9 @@ class EmailVerificationService:
         if user.is_verified:
             return
 
-        # --------------------------------------
+        # ----------------------------------------------------
         # Invalidate previous tokens
-        # --------------------------------------
+        # ----------------------------------------------------
 
         await (
             self.repository
@@ -92,13 +117,17 @@ class EmailVerificationService:
             )
         )
 
-        # --------------------------------------
-        # Generate token
-        # --------------------------------------
+        # ----------------------------------------------------
+        # Generate raw token
+        # ----------------------------------------------------
 
         raw_token = (
             generate_email_verification_token()
         )
+
+        # ----------------------------------------------------
+        # Hash token before storing
+        # ----------------------------------------------------
 
         token_hash = (
             hash_email_verification_token(
@@ -106,9 +135,9 @@ class EmailVerificationService:
             )
         )
 
-        # --------------------------------------
+        # ----------------------------------------------------
         # Expiration
-        # --------------------------------------
+        # ----------------------------------------------------
 
         now = datetime.now(
             timezone.utc
@@ -121,9 +150,9 @@ class EmailVerificationService:
             )
         )
 
-        # --------------------------------------
+        # ----------------------------------------------------
         # Store hashed token
-        # --------------------------------------
+        # ----------------------------------------------------
 
         verification_token = (
             EmailVerificationToken(
@@ -135,17 +164,16 @@ class EmailVerificationService:
         )
 
         await (
-            self.repository
-            .create(
+            self.repository.create(
                 verification_token
             )
         )
 
         await self.db.commit()
 
-        # --------------------------------------
-        # Build frontend URL
-        # --------------------------------------
+        # ----------------------------------------------------
+        # Build frontend verification URL
+        # ----------------------------------------------------
 
         frontend_url = os.getenv(
             "FRONTEND_URL",
@@ -158,17 +186,15 @@ class EmailVerificationService:
             f"?token={quote(raw_token)}"
         )
 
-        # --------------------------------------
-        # Send email
-        # --------------------------------------
+        # ----------------------------------------------------
+        # Send verification email
+        # ----------------------------------------------------
 
         try:
 
             await send_email_verification_email(
                 to_email=user.email,
-                verification_link=(
-                    verification_link
-                ),
+                verification_link=verification_link,
                 expires_hours=(
                     EMAIL_VERIFICATION_EXPIRY_HOURS
                 ),
@@ -181,14 +207,21 @@ class EmailVerificationService:
                 exc,
             )
 
-    # =========================================
+    # ========================================================
     # VERIFY EMAIL
-    # =========================================
+    # ========================================================
 
     async def verify_email(
         self,
         data: VerifyEmailRequest,
     ) -> None:
+        """
+        Verify a user's email using a valid token.
+        """
+
+        # ----------------------------------------------------
+        # Hash submitted token
+        # ----------------------------------------------------
 
         token_hash = (
             hash_email_verification_token(
@@ -196,13 +229,20 @@ class EmailVerificationService:
             )
         )
 
+        # ----------------------------------------------------
+        # Current time
+        # ----------------------------------------------------
+
         now = datetime.now(
             timezone.utc
         )
 
+        # ----------------------------------------------------
+        # Find valid token
+        # ----------------------------------------------------
+
         verification_token = (
-            await self.repository
-            .get_valid_token(
+            await self.repository.get_valid_token(
                 token_hash=token_hash,
                 current_time=now,
             )
@@ -213,9 +253,12 @@ class EmailVerificationService:
                 "Invalid or expired verification token."
             )
 
+        # ----------------------------------------------------
+        # Find user
+        # ----------------------------------------------------
+
         user = (
-            await self.repository
-            .get_user(
+            await self.repository.get_user(
                 verification_token.user_id
             )
         )
@@ -225,21 +268,36 @@ class EmailVerificationService:
                 "Invalid or expired verification token."
             )
 
-        # --------------------------------------
-        # Mark email verified
-        # --------------------------------------
+        # ----------------------------------------------------
+        # Mark email as verified
+        # ----------------------------------------------------
 
         user.is_verified = True
 
-        # --------------------------------------
+        # ----------------------------------------------------
         # Consume token
-        # --------------------------------------
+        # ----------------------------------------------------
 
         verification_token.used = True
 
-        # --------------------------------------
-        # Save
-        # --------------------------------------
+        # ----------------------------------------------------
+        # Save changes
+        # ----------------------------------------------------
 
         await self.db.commit()
 
+    # ========================================================
+    # RESEND VERIFICATION
+    # ========================================================
+
+    async def resend_verification(
+        self,
+        data: ResendVerificationRequest,
+    ) -> None:
+        """
+        Resend the email verification message.
+        """
+
+        await self.send_verification(
+            data.email
+        )

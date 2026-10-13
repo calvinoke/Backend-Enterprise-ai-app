@@ -1,9 +1,15 @@
 from fastapi import (
     APIRouter,
+    Depends,
     HTTPException,
 )
 
+from app.auth.dependencies import (
+    require_admin,
+)
+
 from app.core.config import settings
+from app.users.models import User
 from .schemas import (
     LLMGenerateRequest,
     LLMGenerateResponse,
@@ -17,9 +23,13 @@ router = APIRouter(
 )
 
 
-# =====================================================
+# =========================================================
 # GENERATE
-# =====================================================
+# ADMIN ONLY
+#
+# Normal users access the LLM indirectly through
+# /rag/answer and the Chat functionality.
+# =========================================================
 
 @router.post(
     "/generate",
@@ -27,6 +37,9 @@ router = APIRouter(
 )
 async def generate(
     request: LLMGenerateRequest,
+    _admin: User = Depends(
+        require_admin
+    ),
 ):
 
     try:
@@ -41,17 +54,11 @@ async def generate(
         )
 
         return LLMGenerateResponse(
-
             prompt=request.prompt,
-
             response=response,
-
             provider=settings.AI_PROVIDER,
-
             model=settings.AI_MODEL,
-
             temperature=request.temperature,
-
             max_tokens=request.max_tokens,
         )
 

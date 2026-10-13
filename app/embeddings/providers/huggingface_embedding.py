@@ -1,71 +1,134 @@
-from sentence_transformers import (
-    SentenceTransformer,
-)
+import asyncio
+import logging
+from huggingface_hub import InferenceClient
 from app.core.config import settings
-from ..base import EmbeddingProvider
+
+logger = logging.getLogger(__name__)
 
 
-class HuggingFaceEmbeddingProvider(
-    EmbeddingProvider
-):
+class HuggingFaceEmbeddingProvider:
+    """
+    Generate text embeddings through Hugging Face Inference Providers.
 
-    def __init__(self):
+    This implementation does not download or load the model locally.
+    It preserves the interface required by EmbeddingService.
+    """
 
-        self.model = SentenceTransformer(
-            settings.EMBEDDING_MODEL
-        )
+    provider_name = "huggingface"
 
-        self._dimension = (
-            self.model.get_embedding_dimension()
-        )
+    def __init__(self) -> None:
+        self.model_name = settings.EMBEDDING_MODEL
+        self.dimension = settings.VECTOR_DIMENSION
 
-        if not self._dimension:
+        token = settings.HUGGINGFACE_API_KEY
+
+        if not token:
             raise ValueError(
-                "Unable to determine "
-                "HuggingFace embedding dimension."
+                "HUGGINGFACE_API_KEY is required for "
+                "hosted Hugging Face embeddings."
             )
 
-    @property
-    def provider_name(self) -> str:
-        return "huggingface"
-
-    @property
-    def model_name(self) -> str:
-        return settings.EMBEDDING_MODEL
-
-    @property
-    def dimension(self) -> int:
-        return self._dimension
-
-    async def embed(
-        self,
-        text: str,
-    ) -> list[float]:
-
-        vector = self.model.encode(
-            text,
-            convert_to_numpy=True,
+        self.client = InferenceClient(
+            model=self.model_name,
+            token=token,
+            provider="hf-inference",
         )
 
-        return [
-            float(value)
-            for value in vector.tolist()
-        ]
+        logger.info(
+            "Hugging Face hosted embeddings configured: "
+            "model=%s dimension=%s",
+            self.model_name,
+            self.dimension,
+        )
+
+    def _embed_sync(
+        self,
+        texts: list[str],
+    ) -> list[list[float]]:
+        """Call the hosted embedding API synchronously."""
+
+        response = self.client.feature_extraction(
+            texts,
+            normalize=True,
+        )
+
+        # Hugging Face may return an array-like response.
+        if hasattr(response, "tolist"):
+            response = response.tolist()
+
+        # Normalize the result to a list of vectors.
+        response = list(response)
+
+        if not response:
+            raise ValueError(
+                "Hugging Face returned no embeddings."
+            )
+
+        # A single input can be returned as a flat vector.
+        if isinstance(response[0], (int, float)):
+            response = [response]
+
+        if len(response) != len(texts):
+            raise ValueError(
+                "Embedding count mismatch: "
+                f"expected {len(texts)}, got {len(response)}."
+            )
+
+        embeddings: list[list[float]] = []
+
+        for index, vector in enumerate(response):
+            if hasattr(vector, "tolist"):
+                vector = vector.tolist()
+
+            vector = [float(value) for value in vector]
+
+            if len(vector) != self.dimension:
+                raise ValueError(
+                    f"Embedding {index} has dimension "
+                    f"{len(vector)}; expected {self.dimension}."
+                )
+
+            embeddings.append(vector)
+
+        return embeddings
+
+    async def embed(self, text: str) -> list[float]:
+        """Generate one embedding without blocking the event loop."""
+
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(
+                "Text must be a non-empty string."
+            )
+
+        results = await asyncio.to_thread(
+            self._embed_sync,
+            [text.strip()],
+        )
+
+        return results[0]
 
     async def embed_batch(
         self,
         texts: list[str],
     ) -> list[list[float]]:
+        """Generate embeddings for a batch of texts."""
 
-        vectors = self.model.encode(
-            texts,
-            convert_to_numpy=True,
-        )
+        if not texts:
+            return []
 
-        return [
-            [
-                float(value)
-                for value in vector.tolist()
-            ]
-            for vector in vectors
+        if any(
+            not isinstance(text, str) or not text.strip()
+            for text in texts
+        ):
+            raise ValueError(
+                "Every text must be a non-empty string."
+            )
+
+        cleaned_texts = [
+            text.strip() for text in texts
         ]
+
+        return await asyncio.to_thread(
+            self._embed_sync,
+            cleaned_texts,
+        )

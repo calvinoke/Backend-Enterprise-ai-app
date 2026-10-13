@@ -12,12 +12,21 @@ from fastapi import (
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.session import get_db
-from app.rag.service import RAGService
-
 from sklearn.metrics.pairwise import (
     cosine_similarity,
 )
+
+from app.auth.dependencies import (
+    require_admin,
+)
+
+from app.database.session import get_db
+
+from app.rag.service import (
+    RAGService,
+)
+
+from app.users.models import User
 
 from .schemas import (
     BatchEmbeddingRequest,
@@ -35,9 +44,13 @@ from .schemas import (
     SimilarityResponse,
 )
 
-from .service import EmbeddingService
+from .service import (
+    EmbeddingService,
+)
+
 
 logger = logging.getLogger(__name__)
+
 
 router = APIRouter(
     prefix="/embeddings",
@@ -48,16 +61,22 @@ router = APIRouter(
 embedding_service = EmbeddingService()
 
 
+# =========================================================
+# GENERATE SINGLE EMBEDDING
+# ADMIN ONLY
+# =========================================================
+
 @router.post(
     "/generate",
     response_model=EmbeddingResponse,
 )
 async def generate_embedding(
     request: EmbeddingRequest,
+    _admin: User = Depends(
+        require_admin
+    ),
 ):
-
     try:
-
         embedding = (
             await embedding_service.generate_embedding(
                 request.text
@@ -65,8 +84,12 @@ async def generate_embedding(
         )
 
         return EmbeddingResponse(
-            provider=embedding_service.provider_name,
-            model=embedding_service.model_name,
+            provider=(
+                embedding_service.provider_name
+            ),
+            model=(
+                embedding_service.model_name
+            ),
             dimension=len(embedding),
             embedding=embedding,
         )
@@ -90,16 +113,22 @@ async def generate_embedding(
         ) from exc
 
 
+# =========================================================
+# GENERATE BATCH EMBEDDINGS
+# ADMIN ONLY
+# =========================================================
+
 @router.post(
     "/generate-batch",
     response_model=BatchEmbeddingResponse,
 )
 async def generate_batch_embeddings(
     request: BatchEmbeddingRequest,
+    _admin: User = Depends(
+        require_admin
+    ),
 ):
-
     try:
-
         embeddings = (
             await embedding_service.generate_embeddings(
                 request.texts
@@ -107,8 +136,12 @@ async def generate_batch_embeddings(
         )
 
         return BatchEmbeddingResponse(
-            provider=embedding_service.provider_name,
-            model=embedding_service.model_name,
+            provider=(
+                embedding_service.provider_name
+            ),
+            model=(
+                embedding_service.model_name
+            ),
             dimension=(
                 len(embeddings[0])
                 if embeddings
@@ -136,16 +169,22 @@ async def generate_batch_embeddings(
         ) from exc
 
 
+# =========================================================
+# CALCULATE SIMILARITY
+# ADMIN ONLY
+# =========================================================
+
 @router.post(
     "/similarity",
     response_model=SimilarityResponse,
 )
 async def calculate_similarity(
     request: SimilarityRequest,
+    _admin: User = Depends(
+        require_admin
+    ),
 ):
-
     try:
-
         start = time.perf_counter()
 
         embeddings = (
@@ -159,11 +198,17 @@ async def calculate_similarity(
 
         vec1 = np.array(
             embeddings[0]
-        ).reshape(1, -1)
+        ).reshape(
+            1,
+            -1,
+        )
 
         vec2 = np.array(
             embeddings[1]
-        ).reshape(1, -1)
+        ).reshape(
+            1,
+            -1,
+        )
 
         score = float(
             cosine_similarity(
@@ -186,8 +231,12 @@ async def calculate_similarity(
             text1=request.text1,
             text2=request.text2,
             similarity_score=score,
-            provider=embedding_service.provider_name,
-            model=embedding_service.model_name,
+            provider=(
+                embedding_service.provider_name
+            ),
+            model=(
+                embedding_service.model_name
+            ),
         )
 
     except Exception as exc:
@@ -202,22 +251,27 @@ async def calculate_similarity(
         ) from exc
 
 
+# =========================================================
+# CALCULATE BATCH SIMILARITY
+# ADMIN ONLY
+# =========================================================
+
 @router.post(
     "/similarity/batch",
     response_model=BatchSimilarityResponse,
 )
 async def calculate_batch_similarity(
     request: BatchSimilarityRequest,
+    _admin: User = Depends(
+        require_admin
+    ),
 ):
-
     try:
-
         start = time.perf_counter()
 
         texts = []
 
         for pair in request.pairs:
-
             texts.append(pair.text1)
             texts.append(pair.text2)
 
@@ -232,14 +286,19 @@ async def calculate_batch_similarity(
         for index, pair in enumerate(
             request.pairs
         ):
-
             vec1 = np.array(
                 embeddings[index * 2]
-            ).reshape(1, -1)
+            ).reshape(
+                1,
+                -1,
+            )
 
             vec2 = np.array(
                 embeddings[index * 2 + 1]
-            ).reshape(1, -1)
+            ).reshape(
+                1,
+                -1,
+            )
 
             score = float(
                 cosine_similarity(
@@ -269,8 +328,12 @@ async def calculate_batch_similarity(
 
         return BatchSimilarityResponse(
             results=results,
-            provider=embedding_service.provider_name,
-            model=embedding_service.model_name,
+            provider=(
+                embedding_service.provider_name
+            ),
+            model=(
+                embedding_service.model_name
+            ),
         )
 
     except ValueError as exc:
@@ -292,19 +355,29 @@ async def calculate_batch_similarity(
         ) from exc
 
 
+# =========================================================
+# SEMANTIC SEARCH
+# ADMIN ONLY
+#
+# Normal users should use:
+# POST /rag/search
+#
+# =========================================================
+
 @router.post(
     "/search",
     response_model=EmbeddingSearchResponse,
 )
 async def semantic_search(
     request: EmbeddingSearchRequest,
+    _admin: User = Depends(
+        require_admin
+    ),
     db: AsyncSession = Depends(
         get_db
     ),
 ):
-
     try:
-
         start = time.perf_counter()
 
         service = RAGService(db)
@@ -324,11 +397,15 @@ async def semantic_search(
 
             response_results.append(
                 EmbeddingSearchResult(
-                    chunk_id=str(chunk.id),
+                    chunk_id=str(
+                        chunk.id
+                    ),
                     document_id=str(
                         chunk.document_id
                     ),
-                    chunk_index=chunk.chunk_index,
+                    chunk_index=(
+                        chunk.chunk_index
+                    ),
                     content=chunk.content,
                     similarity=round(
                         similarity,
@@ -363,7 +440,9 @@ async def semantic_search(
                 embedding_service.dimension
             ),
             results=response_results,
-            count=len(response_results),
+            count=len(
+                response_results
+            ),
         )
 
     except ValueError as exc:
@@ -384,13 +463,20 @@ async def semantic_search(
             detail="Semantic search failed.",
         ) from exc
 
+
+# =========================================================
+# HEALTH CHECK
+#
+# Kept public so infrastructure/readiness checks can
+# determine whether the embedding service is available.
+# =========================================================
+
 @router.get(
     "/health",
 )
 async def health_check():
 
     try:
-
         embedding = (
             await embedding_service.generate_embedding(
                 "health check",
@@ -400,10 +486,16 @@ async def health_check():
 
         return {
             "status": "healthy",
-            "provider": embedding_service.provider_name,
-            "model": embedding_service.model_name,
+            "provider": (
+                embedding_service.provider_name
+            ),
+            "model": (
+                embedding_service.model_name
+            ),
             "dimension": len(embedding),
-            "initialized": embedding_service.is_initialized,
+            "initialized": (
+                embedding_service.is_initialized
+            ),
         }
 
     except Exception as exc:
@@ -413,22 +505,43 @@ async def health_check():
         )
 
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+            ),
             detail=str(exc),
         ) from exc
 
+
+# =========================================================
+# SERVICE INFORMATION
+# ADMIN ONLY
+# =========================================================
 
 @router.get(
     "/info",
     response_model=EmbeddingInfoResponse,
 )
-async def service_info():
+async def service_info(
+    _admin: User = Depends(
+        require_admin
+    ),
+):
 
     return EmbeddingInfoResponse(
         service="Embedding Service",
-        provider=embedding_service.provider_name,
-        model=embedding_service.model_name,
-        dimension=embedding_service.dimension,
-        initialized=embedding_service.is_initialized,
-        cache=embedding_service.get_cache_stats(),
+        provider=(
+            embedding_service.provider_name
+        ),
+        model=(
+            embedding_service.model_name
+        ),
+        dimension=(
+            embedding_service.dimension
+        ),
+        initialized=(
+            embedding_service.is_initialized
+        ),
+        cache=(
+            embedding_service.get_cache_stats()
+        ),
     )
