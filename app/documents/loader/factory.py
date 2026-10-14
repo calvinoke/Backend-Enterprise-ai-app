@@ -6,36 +6,23 @@ from app.documents.loader.txt_loader import TXTLoader
 from app.documents.loader.markdown_loader import MarkdownLoader
 
 
-
 class LoaderFactory:
-
+    """Return the appropriate document loader."""
 
     @staticmethod
-    def get_loader(
-        document_type: DocumentType
-    ):
-
-
+    def get_loader(document_type: DocumentType):
         if document_type == DocumentType.PDF:
-
-            return PDFLoader
-
+            return PDFLoader()
 
         if document_type == DocumentType.DOCX:
-
-            return DOCXLoader
-
+            return DOCXLoader()
 
         if document_type == DocumentType.TXT:
-
-            return TXTLoader
-
+            return TXTLoader()
 
         if document_type == DocumentType.MD:
-
-            return MarkdownLoader
-
+            return MarkdownLoader()
 
         raise ValueError(
-            f"Unsupported document type {document_type}"
+            f"Unsupported document type: {document_type}"
         )
