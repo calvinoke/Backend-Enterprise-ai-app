@@ -1,338 +1,237 @@
-import asyncio
+
 import os
-import smtplib
-from email.message import EmailMessage
+import logging
+import html
+
+import httpx
 
 
-# ============================================================
-# SMTP CONFIGURATION
-# ============================================================
+logger = logging.getLogger(__name__)
 
-def _get_smtp_config() -> dict:
-    """
-    Read SMTP configuration from environment variables.
-    """
+RESEND_API_URL = "https://api.resend.com/emails"
+RESEND_TIMEOUT_SECONDS = 20.0
+
+
+def _get_email_config() -> dict:
+    """Load email configuration from environment variables."""
 
     return {
-        "host": os.getenv("SMTP_HOST"),
-        "port": int(
-            os.getenv(
-                "SMTP_PORT",
-                "587",
-            )
-        ),
-        "username": os.getenv(
-            "SMTP_USERNAME"
-        ),
-        "password": os.getenv(
-            "SMTP_PASSWORD"
-        ),
+        "api_key": os.getenv("RESEND_API_KEY", "").strip(),
         "from_email": os.getenv(
-            "SMTP_FROM_EMAIL"
-        ),
-        "from_name": os.getenv(
-            "SMTP_FROM_NAME",
-            "Enterprise AI Platform",
-        ),
+            "EMAIL_FROM",
+            "Enterprise AI Platform <onboarding@resend.dev>",
+        ).strip(),
         "app_env": os.getenv(
             "APP_ENV",
             "development",
-        ).lower(),
+        ).strip().lower(),
     }
 
 
-# ============================================================
-# GENERIC SMTP SEND
-# ============================================================
-
-async def _send_email_message(
-    message: EmailMessage,
+async def _send_email(
+    to_email: str,
+    subject: str,
+    text_body: str,
+    html_body: str,
 ) -> None:
-    """
-    Send an EmailMessage without blocking the
-    asynchronous FastAPI event loop.
-    """
+    """Send an email using Resend's HTTPS API."""
 
-    config = _get_smtp_config()
-
-    smtp_host = config["host"]
-    smtp_port = config["port"]
-    smtp_username = config["username"]
-    smtp_password = config["password"]
+    config = _get_email_config()
+    api_key = config["api_key"]
+    from_email = config["from_email"]
     app_env = config["app_env"]
 
-    # --------------------------------------------------------
-    # SMTP MUST BE CONFIGURED IN PRODUCTION
-    # --------------------------------------------------------
-
-    if not smtp_host:
+    # Development fallback: print the message, never the API key.
+    if not api_key:
         if app_env != "production":
-            raise RuntimeError(
-                "SMTP is not configured."
+            logger.warning(
+                "RESEND_API_KEY is missing. Email was not sent. "
+                "Recipient: %s; subject: %s",
+                to_email,
+                subject,
             )
+            print(
+                "\n--- DEVELOPMENT EMAIL (NOT SENT) ---\n"
+                f"To: {to_email}\n"
+                f"Subject: {subject}\n"
+                f"{text_body}\n"
+                "-------------------------------------\n"
+            )
+            return
 
         raise RuntimeError(
-            "SMTP is not configured for production."
+            "RESEND_API_KEY is not configured for production."
         )
 
-    # --------------------------------------------------------
-    # SEND EMAIL IN A BACKGROUND THREAD
-    # --------------------------------------------------------
+    if not from_email:
+        raise RuntimeError(
+            "EMAIL_FROM is not configured."
+        )
 
-    def send_email() -> None:
-        # ----------------------------------------------------
-        # SMTP SSL
-        # ----------------------------------------------------
+    payload = {
+        "from": from_email,
+        "to": [to_email],
+        "subject": subject,
+        "text": text_body,
+        "html": html_body,
+    }
 
-        if smtp_port == 465:
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
 
-            with smtplib.SMTP_SSL(
-                smtp_host,
-                smtp_port,
-                timeout=15,
-            ) as server:
+    async with httpx.AsyncClient(
+        timeout=RESEND_TIMEOUT_SECONDS
+    ) as client:
+        response = await client.post(
+            RESEND_API_URL,
+            json=payload,
+            headers=headers,
+        )
 
-                if (
-                    smtp_username
-                    and smtp_password
-                ):
-                    server.login(
-                        smtp_username,
-                        smtp_password,
-                    )
+    if response.is_error:
+        # Do not log API keys or other credentials.
+        logger.error(
+            "Resend API rejected email. HTTP status: %s; response: %s",
+            response.status_code,
+            response.text[:1000],
+        )
+        response.raise_for_status()
 
-                server.send_message(
-                    message
-                )
+    result = response.json()
 
-        # ----------------------------------------------------
-        # SMTP + STARTTLS
-        # ----------------------------------------------------
-
-        else:
-
-            with smtplib.SMTP(
-                smtp_host,
-                smtp_port,
-                timeout=15,
-            ) as server:
-
-                server.ehlo()
-
-                server.starttls()
-
-                server.ehlo()
-
-                if (
-                    smtp_username
-                    and smtp_password
-                ):
-                    server.login(
-                        smtp_username,
-                        smtp_password,
-                    )
-
-                server.send_message(
-                    message
-                )
-
-    await asyncio.to_thread(
-        send_email
+    logger.info(
+        "Resend accepted email. Recipient: %s; email ID: %s",
+        to_email,
+        result.get("id", "unknown"),
     )
 
-
-# ============================================================
-# PASSWORD RESET EMAIL
-# ============================================================
 
 async def send_password_reset_email(
     to_email: str,
     reset_link: str,
     expires_minutes: int,
 ) -> None:
-    """
-    Send a password-reset email.
+    """Send a password-reset email."""
 
-    Development behavior:
-    When SMTP is not configured, the reset link is
-    printed to the terminal.
+    safe_link = html.escape(reset_link, quote=True)
+    safe_expiry = int(expires_minutes)
 
-    Production behavior:
-    SMTP must be configured.
-    """
+    subject = "Reset your Enterprise AI Platform password"
 
-    config = _get_smtp_config()
-
-    smtp_host = config["host"]
-    smtp_from_email = config["from_email"]
-    smtp_from_name = config["from_name"]
-    app_env = config["app_env"]
-
-    # ========================================================
-    # DEVELOPMENT FALLBACK
-    # ========================================================
-
-    if not smtp_host or not smtp_from_email:
-
-        if app_env != "production":
-
-            print(
-                "\n"
-                "=========================================\n"
-                "PASSWORD RESET LINK - DEVELOPMENT ONLY\n"
-                "=========================================\n"
-                f"Email: {to_email}\n"
-                f"Reset link: {reset_link}\n"
-                f"Expires in: {expires_minutes} minutes\n"
-                "=========================================\n"
-            )
-
-            return
-
-        raise RuntimeError(
-            "SMTP is not configured for production."
-        )
-
-    # ========================================================
-    # BUILD PASSWORD RESET EMAIL
-    # ========================================================
-
-    message = EmailMessage()
-
-    message["Subject"] = (
-        "Reset your Enterprise AI Platform password"
-    )
-
-    message["From"] = (
-        f"{smtp_from_name} <{smtp_from_email}>"
-    )
-
-    message["To"] = to_email
-
-    message.set_content(
-        f"""
+    text_body = f"""
 Hello,
 
-We received a request to reset your password
-for the Enterprise AI Platform.
+We received a request to reset your Enterprise AI Platform password.
 
-Use the following link to create a new password:
-
+Open this link to reset your password:
 {reset_link}
 
-This link expires in {expires_minutes} minutes.
+This link expires in {safe_expiry} minutes.
 
-If you did not request a password reset, you can
-safely ignore this email.
+If you did not request a password reset, you can ignore this email.
 
 Regards,
-{smtp_from_name}
+Enterprise AI Platform
 """.strip()
+
+    html_body = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset your password</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
+  <h2>Reset your password</h2>
+  <p>Hello,</p>
+  <p>We received a request to reset your Enterprise AI Platform password.</p>
+  <p>
+    <a href="{safe_link}"
+       style="display:inline-block;padding:12px 20px;background:#2563eb;
+              color:#ffffff;text-decoration:none;border-radius:6px;">
+      Reset password
+    </a>
+  </p>
+  <p>If the button does not work, copy this link into your browser:</p>
+  <p><a href="{safe_link}">{safe_link}</a></p>
+  <p>This link expires in {safe_expiry} minutes.</p>
+  <p>If you did not request a password reset, you can ignore this email.</p>
+  <p>Regards,<br>Enterprise AI Platform</p>
+</body>
+</html>
+""".strip()
+
+    await _send_email(
+        to_email=to_email,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
     )
 
-    # ========================================================
-    # SEND
-    # ========================================================
-
-    await _send_email_message(
-        message
-    )
-
-
-# ============================================================
-# EMAIL VERIFICATION
-# ============================================================
 
 async def send_email_verification_email(
     to_email: str,
     verification_link: str,
     expires_hours: int,
 ) -> None:
-    """
-    Send an email verification message.
+    """Send an email-verification message."""
 
-    Development behavior:
-    When SMTP is not configured, the verification link
-    is printed to the terminal.
+    safe_link = html.escape(verification_link, quote=True)
+    safe_expiry = int(expires_hours)
 
-    Production behavior:
-    SMTP must be configured.
-    """
+    subject = "Verify your Enterprise AI Platform email"
 
-    config = _get_smtp_config()
-
-    smtp_host = config["host"]
-    smtp_from_email = config["from_email"]
-    smtp_from_name = config["from_name"]
-    app_env = config["app_env"]
-
-    # ========================================================
-    # DEVELOPMENT FALLBACK
-    # ========================================================
-
-    if not smtp_host or not smtp_from_email:
-
-        if app_env != "production":
-
-            print(
-                "\n"
-                "=========================================\n"
-                "EMAIL VERIFICATION LINK - DEVELOPMENT ONLY\n"
-                "=========================================\n"
-                f"Email: {to_email}\n"
-                f"Verification link: {verification_link}\n"
-                f"Expires in: {expires_hours} hours\n"
-                "=========================================\n"
-            )
-
-            return
-
-        raise RuntimeError(
-            "SMTP is not configured for production."
-        )
-
-    # ========================================================
-    # BUILD VERIFICATION EMAIL
-    # ========================================================
-
-    message = EmailMessage()
-
-    message["Subject"] = (
-        "Verify your Enterprise AI Platform email"
-    )
-
-    message["From"] = (
-        f"{smtp_from_name} <{smtp_from_email}>"
-    )
-
-    message["To"] = to_email
-
-    message.set_content(
-        f"""
+    text_body = f"""
 Hello,
 
-Thank you for creating an account on the
-Enterprise AI Platform.
+Thank you for creating an account on the Enterprise AI Platform.
 
-Please verify your email address by opening
-the following link:
-
+Open this link to verify your email address:
 {verification_link}
 
-This verification link expires in {expires_hours} hours.
+This verification link expires in {safe_expiry} hours.
 
-If you did not create this account, you can
-safely ignore this email.
+If you did not create this account, you can ignore this email.
 
 Regards,
-{smtp_from_name}
+Enterprise AI Platform
 """.strip()
-    )
 
-    # ========================================================
-    # SEND
-    # ========================================================
+    html_body = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify your email</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #222;">
+  <h2>Verify your email address</h2>
+  <p>Hello,</p>
+  <p>Thank you for creating an account on the Enterprise AI Platform.</p>
+  <p>Please confirm your email address by clicking below:</p>
+  <p>
+    <a href="{safe_link}"
+       style="display:inline-block;padding:12px 20px;background:#2563eb;
+              color:#ffffff;text-decoration:none;border-radius:6px;">
+      Verify email address
+    </a>
+  </p>
+  <p>If the button does not work, copy this link into your browser:</p>
+  <p><a href="{safe_link}">{safe_link}</a></p>
+  <p>This verification link expires in {safe_expiry} hours.</p>
+  <p>If you did not create this account, you can ignore this email.</p>
+  <p>Regards,<br>Enterprise AI Platform</p>
+</body>
+</html>
+""".strip()
 
-    await _send_email_message(
-        message
+    await _send_email(
+        to_email=to_email,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
     )

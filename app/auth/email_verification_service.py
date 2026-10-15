@@ -1,8 +1,5 @@
-from datetime import (
-    datetime,
-    timedelta,
-    timezone,
-)
+
+from datetime import datetime, timedelta, timezone
 import os
 from urllib.parse import quote
 
@@ -11,25 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.email_verification_repository import (
     EmailVerificationRepository,
 )
-
-from app.auth.models import (
-    EmailVerificationToken,
-)
-
+from app.auth.models import EmailVerificationToken
 from app.auth.schemas import (
     ResendVerificationRequest,
     VerifyEmailRequest,
 )
-
 from app.auth.security import (
     generate_email_verification_token,
     hash_email_verification_token,
 )
-
 from app.notifications.email_service import (
     send_email_verification_email,
 )
-
 from app.users.repository import UserRepository
 
 
@@ -42,63 +32,34 @@ EMAIL_VERIFICATION_EXPIRY_HOURS = 24
 
 class EmailVerificationService:
     """
-    Handles email verification and
-    verification email resend operations.
+    Handles email verification and resend operations.
     """
 
-    def __init__(
-        self,
-        db: AsyncSession,
-    ):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-        self.repository = (
-            EmailVerificationRepository(
-                db
-            )
-        )
-
-        self.user_repository = (
-            UserRepository(
-                db
-            )
-        )
+        self.repository = EmailVerificationRepository(db)
+        self.user_repository = UserRepository(db)
 
     # ========================================================
     # SEND VERIFICATION
     # ========================================================
 
-    async def send_verification(
-        self,
-        email: str,
-    ) -> None:
+    async def send_verification(self, email: str) -> None:
         """
         Create and send a new email verification token.
 
-        Unknown email addresses are handled generically
-        by returning without exposing whether the account
-        exists.
+        Unknown email addresses and already-verified accounts
+        are handled without revealing account existence.
         """
 
-        email = (
-            email
-            .strip()
-            .lower()
-        )
+        email = email.strip().lower()
 
         # ----------------------------------------------------
         # Find user
         # ----------------------------------------------------
 
-        user = (
-            await self.user_repository.get_by_email(
-                email
-            )
-        )
-
-        # ----------------------------------------------------
-        # Generic behavior
-        # ----------------------------------------------------
+        user = await self.user_repository.get_by_email(email)
 
         if not user:
             return
@@ -110,65 +71,42 @@ class EmailVerificationService:
         # Invalidate previous tokens
         # ----------------------------------------------------
 
-        await (
-            self.repository
-            .invalidate_user_tokens(
-                user.id
-            )
-        )
+        await self.repository.invalidate_user_tokens(user.id)
 
         # ----------------------------------------------------
         # Generate raw token
         # ----------------------------------------------------
 
-        raw_token = (
-            generate_email_verification_token()
-        )
+        raw_token = generate_email_verification_token()
 
         # ----------------------------------------------------
         # Hash token before storing
         # ----------------------------------------------------
 
-        token_hash = (
-            hash_email_verification_token(
-                raw_token
-            )
-        )
+        token_hash = hash_email_verification_token(raw_token)
 
         # ----------------------------------------------------
-        # Expiration
+        # Set expiration
         # ----------------------------------------------------
 
-        now = datetime.now(
-            timezone.utc
-        )
+        now = datetime.now(timezone.utc)
 
-        expires_at = (
-            now
-            + timedelta(
-                hours=EMAIL_VERIFICATION_EXPIRY_HOURS
-            )
+        expires_at = now + timedelta(
+            hours=EMAIL_VERIFICATION_EXPIRY_HOURS
         )
 
         # ----------------------------------------------------
         # Store hashed token
         # ----------------------------------------------------
 
-        verification_token = (
-            EmailVerificationToken(
-                user_id=user.id,
-                token_hash=token_hash,
-                expires_at=expires_at,
-                used=False,
-            )
+        verification_token = EmailVerificationToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+            used=False,
         )
 
-        await (
-            self.repository.create(
-                verification_token
-            )
-        )
-
+        await self.repository.create(verification_token)
         await self.db.commit()
 
         # ----------------------------------------------------
@@ -181,31 +119,30 @@ class EmailVerificationService:
         ).rstrip("/")
 
         verification_link = (
-            f"{frontend_url}"
-            f"/verify-email"
+            f"{frontend_url}/verify-email"
             f"?token={quote(raw_token)}"
         )
 
         # ----------------------------------------------------
-        # Send verification email
+        # Send verification email using Resend
         # ----------------------------------------------------
 
         try:
-
             await send_email_verification_email(
                 to_email=user.email,
                 verification_link=verification_link,
-                expires_hours=(
-                    EMAIL_VERIFICATION_EXPIRY_HOURS
-                ),
+                expires_hours=EMAIL_VERIFICATION_EXPIRY_HOURS,
             )
 
-        except Exception as exc:
+        except Exception:
+            # Do not silently report email delivery as successful.
+            # Log the exception and allow the API to handle failure.
+            import logging
 
-            print(
-                "Verification email failed:",
-                exc,
+            logging.getLogger(__name__).exception(
+                "Failed to send verification email."
             )
+            raise
 
     # ========================================================
     # VERIFY EMAIL
@@ -223,19 +160,13 @@ class EmailVerificationService:
         # Hash submitted token
         # ----------------------------------------------------
 
-        token_hash = (
-            hash_email_verification_token(
-                data.token
-            )
-        )
+        token_hash = hash_email_verification_token(data.token)
 
         # ----------------------------------------------------
         # Current time
         # ----------------------------------------------------
 
-        now = datetime.now(
-            timezone.utc
-        )
+        now = datetime.now(timezone.utc)
 
         # ----------------------------------------------------
         # Find valid token
@@ -257,10 +188,8 @@ class EmailVerificationService:
         # Find user
         # ----------------------------------------------------
 
-        user = (
-            await self.repository.get_user(
-                verification_token.user_id
-            )
+        user = await self.repository.get_user(
+            verification_token.user_id
         )
 
         if not user:
@@ -273,11 +202,6 @@ class EmailVerificationService:
         # ----------------------------------------------------
 
         user.is_verified = True
-
-        # ----------------------------------------------------
-        # Consume token
-        # ----------------------------------------------------
-
         verification_token.used = True
 
         # ----------------------------------------------------
@@ -295,9 +219,7 @@ class EmailVerificationService:
         data: ResendVerificationRequest,
     ) -> None:
         """
-        Resend the email verification message.
+        Resend an email verification message.
         """
 
-        await self.send_verification(
-            data.email
-        )
+        await self.send_verification(str(data.email))
