@@ -1,4 +1,5 @@
 
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -44,12 +45,6 @@ async def lifespan(app: FastAPI):
         version=settings.APP_VERSION,
     )
 
-    # Future startup tasks:
-    # - Database health check
-    # - Redis connection
-    # - Celery initialization
-    # - AI model loading
-
     yield
 
     logger.info("application_stopping")
@@ -70,13 +65,15 @@ app = FastAPI(
 # 5. Configure CORS
 # --------------------------------------------------
 
+allowed_origins = [
+    "https://enterprise-ai-frontend-nine.vercel.app",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://enterprise-ai-frontend-nine.vercel.app"
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
