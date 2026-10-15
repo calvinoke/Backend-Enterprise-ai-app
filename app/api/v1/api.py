@@ -98,10 +98,10 @@ api_router.include_router(
     tags=["Authentication"],
 )
 
+# The users router already defines prefix="/users".
+# Do not add another "/users" prefix here.
 api_router.include_router(
     users_router,
-    prefix="/users",
-    tags=["Users"],
 )
 
 api_router.include_router(
