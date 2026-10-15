@@ -66,7 +66,7 @@ app = FastAPI(
 # --------------------------------------------------
 
 allowed_origins = [
-    "https://backend-enterprise-ai-app.onrender.com/",
+    "https://backend-enterprise-ai-app.onrender.com",
     "https://enterprise-ai-frontend-nine.vercel.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
